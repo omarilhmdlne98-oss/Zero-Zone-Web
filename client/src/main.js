@@ -69,6 +69,23 @@ let localKills = 0;
 let localMatchResetting = false;
 let currentRoomName = 'alpha';
 
+const WEAPONS = [
+  { id: 'rifle', name: 'VX-47 Assault Rifle', fireInterval: 0.14, damage: 22, recoil: 0.018, tracerColor: 0x22d3ee, pellets: 1, spread: 0.0 },
+  { id: 'railgun', name: 'XR-9 Railgun', fireInterval: 0.78, damage: 65, recoil: 0.065, tracerColor: 0xc084fc, pellets: 1, spread: 0.0 },
+  { id: 'shotgun', name: 'M-12 Heavy Shotgun', fireInterval: 0.58, damage: 14, recoil: 0.05, tracerColor: 0xfb923c, pellets: 5, spread: 0.065 }
+];
+let currentWeaponIdx = 0;
+let fireCooldown = 0;
+
+function selectWeapon(idx) {
+  if (idx < 0 || idx >= WEAPONS.length) return;
+  currentWeaponIdx = idx;
+  for (let i = 0; i < WEAPONS.length; i++) {
+    const el = document.getElementById(`wpn-${i}`);
+    if (el) el.classList.toggle('active', i === idx);
+  }
+}
+
 function spawnTracer(from, dir, color = 0x38bdf8) {
   const geo = new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6);
   geo.rotateX(Math.PI / 2);
@@ -290,6 +307,10 @@ function animate() {
   if (running && world && playerBody) {
     const move = controls.getMoveInput();
     const act = controls.consumeActions();
+    if (act.weaponSwitch !== null) {
+      selectWeapon(act.weaponSwitch);
+    }
+    if (fireCooldown > 0) fireCooldown = Math.max(0, fireCooldown - dt);
     const pos = playerBody.translation();
     const vel = playerBody.linvel();
     const grounded = pos.y <= 1.05 && Math.abs(vel.y) < 0.2;
@@ -351,48 +372,64 @@ function animate() {
     camera.lookAt(pNew.x, pNew.y + 0.8, pNew.z);
 
     // Fire Weapon
-    if (act.fire && localState.alive) {
+    if (act.fire && localState.alive && fireCooldown <= 0) {
+      const wpn = WEAPONS[currentWeaponIdx];
+      fireCooldown = wpn.fireInterval;
       sfx.fire();
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      const origin = camera.position.clone().addScaledVector(dir, 1.0);
-      spawnTracer(origin, dir, 0x22d3ee);
-      net?.send({ type: 'fire', origin: origin.toArray(), dir: dir.toArray() });
+      controls.pitch = Math.min(0.45, controls.pitch + wpn.recoil);
 
-      raycaster.set(camera.position, dir);
+      const baseDir = new THREE.Vector3();
+      camera.getWorldDirection(baseDir);
       const targets = [
         ...Array.from(remotePlayers.values()).map((r) => r.mesh),
         ...localBots.filter((b) => b.alive).map((b) => b.mesh),
         ...Array.from(crates.values()).filter((c) => c.mesh.visible).map((c) => c.mesh)
       ];
-      const hits = raycaster.intersectObjects(targets, true);
-      if (hits.length > 0) {
-        const hitObj = hits[0].object;
-        if (hitObj.userData.playerId) {
-          sfx.hit();
-          net?.send({ type: 'hit_player', targetId: hitObj.userData.playerId, damage: 22 });
-        } else if (hitObj.userData.botId) {
-          sfx.hit();
-          const bot = localBots.find((b) => b.id === hitObj.userData.botId);
-          if (bot && bot.alive) {
-            bot.hp = Math.max(0, bot.hp - 25);
-            if (bot.hp === 0) {
-              bot.alive = false;
-              bot.mesh.visible = false;
-              bot.respawnTimer = 3.0;
-              localKills += 1;
-              sfx.crateBreak();
-              updateLocalHudBanner();
+
+      for (let p = 0; p < wpn.pellets; p++) {
+        const dir = baseDir.clone();
+        if (wpn.spread > 0) {
+          dir.x += (Math.random() - 0.5) * wpn.spread;
+          dir.y += (Math.random() - 0.5) * wpn.spread;
+          dir.z += (Math.random() - 0.5) * wpn.spread;
+          dir.normalize();
+        }
+        const origin = camera.position.clone().addScaledVector(dir, 1.0);
+        spawnTracer(origin, dir, wpn.tracerColor);
+        if (p === 0) {
+          net?.send({ type: 'fire', origin: origin.toArray(), dir: dir.toArray(), weapon: wpn.id, color: wpn.tracerColor });
+        }
+
+        raycaster.set(camera.position, dir);
+        const hits = raycaster.intersectObjects(targets, true);
+        if (hits.length > 0) {
+          const hitObj = hits[0].object;
+          if (hitObj.userData.playerId) {
+            sfx.hit();
+            net?.send({ type: 'hit_player', targetId: hitObj.userData.playerId, damage: wpn.damage });
+          } else if (hitObj.userData.botId) {
+            sfx.hit();
+            const bot = localBots.find((b) => b.id === hitObj.userData.botId);
+            if (bot && bot.alive) {
+              bot.hp = Math.max(0, bot.hp - wpn.damage);
+              if (bot.hp === 0) {
+                bot.alive = false;
+                bot.mesh.visible = false;
+                bot.respawnTimer = 3.0;
+                localKills += 1;
+                sfx.crateBreak();
+                updateLocalHudBanner();
+              }
             }
+          } else if (hitObj.userData.crateId) {
+            sfx.hit();
+            const cr = crates.get(hitObj.userData.crateId);
+            if (cr) {
+              cr.hp -= wpn.damage;
+              if (cr.hp <= 0) { cr.mesh.visible = false; cr.collider?.setEnabled(false); sfx.crateBreak(); }
+            }
+            net?.send({ type: 'hit_crate', crateId: hitObj.userData.crateId });
           }
-        } else if (hitObj.userData.crateId) {
-          sfx.hit();
-          const cr = crates.get(hitObj.userData.crateId);
-          if (cr) {
-            cr.hp -= 25;
-            if (cr.hp <= 0) { cr.mesh.visible = false; cr.collider?.setEnabled(false); sfx.crateBreak(); }
-          }
-          net?.send({ type: 'hit_crate', crateId: hitObj.userData.crateId });
         }
       }
     }

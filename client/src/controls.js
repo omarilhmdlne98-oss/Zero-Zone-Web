@@ -8,6 +8,7 @@ export class DualControls {
     this.jumpPressed = false;
     this.abilityPressed = false;
     this.breachHeld = false;
+    this.weaponSwitch = null;
     this.moveVec = { x: 0, y: 0 };
     this.isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
@@ -21,6 +22,9 @@ export class DualControls {
       if (e.code === 'Space') this.jumpPressed = true;
       if (e.code === 'KeyE') this.abilityPressed = true;
       if (e.code === 'KeyF') this.breachHeld = true;
+      if (e.code === 'Digit1') this.weaponSwitch = 0;
+      if (e.code === 'Digit2') this.weaponSwitch = 1;
+      if (e.code === 'Digit3') this.weaponSwitch = 2;
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
@@ -127,11 +131,13 @@ export class DualControls {
       fire: this.firePressed,
       jump: this.jumpPressed,
       ability: this.abilityPressed,
-      breach: this.breachHeld
+      breach: this.breachHeld,
+      weaponSwitch: this.weaponSwitch
     };
     this.firePressed = false;
     this.jumpPressed = false;
     this.abilityPressed = false;
+    this.weaponSwitch = null;
     return out;
   }
 }
