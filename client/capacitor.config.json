@@ -1,0 +1,8 @@
+{
+  "appId": "com.zerozone.game",
+  "appName": "Zero-Zone",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
