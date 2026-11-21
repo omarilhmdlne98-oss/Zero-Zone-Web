@@ -54,6 +54,7 @@ const crates = new Map();
 
 const controls = new DualControls(canvas);
 const remotePlayers = new Map();
+const localBots = [];
 const tracers = [];
 
 let world = null;
@@ -63,6 +64,10 @@ let localState = { kit: 'vanguard', hp: 100, maxHp: 100, stamina: 100, abilityCd
 let net = null;
 let running = false;
 let lastBreachSent = false;
+let localMode = false;
+let localKills = 0;
+let localMatchResetting = false;
+let currentRoomName = 'alpha';
 
 function spawnTracer(from, dir, color = 0x38bdf8) {
   const geo = new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6);
@@ -104,8 +109,98 @@ function upsertRemotePlayer(p) {
   entry.mesh.visible = p.alive !== false;
 }
 
+function updateLocalHudBanner(statusOverride = null) {
+  const roomEl = document.getElementById('hud-room');
+  if (!roomEl) return;
+  if (localMode) {
+    roomEl.textContent = statusOverride || `Solo AI Arena | KOs: ${localKills}`;
+  } else {
+    roomEl.textContent = `Room: ${currentRoomName}`;
+  }
+}
+
+function spawnLocalBots() {
+  for (const b of localBots) {
+    scene.remove(b.mesh);
+  }
+  localBots.length = 0;
+
+  const botConfigs = [
+    { id: 'bot_vanguard', kit: 'vanguard', maxHp: 100, radius: 9.5, angle: 0.4, speed: 0.65 },
+    { id: 'bot_spectre', kit: 'spectre', maxHp: 85, radius: 13.0, angle: 2.4, speed: -0.8 },
+    { id: 'bot_juggernaut', kit: 'juggernaut', maxHp: 160, radius: 7.2, angle: 4.4, speed: 0.48 }
+  ];
+
+  for (const cfg of botConfigs) {
+    const mesh = createOperatorModel(cfg.kit);
+    mesh.userData.botId = cfg.id;
+    mesh.traverse((c) => { c.userData.botId = cfg.id; });
+    const x = Math.cos(cfg.angle) * cfg.radius;
+    const z = Math.sin(cfg.angle) * cfg.radius;
+    mesh.position.set(x, 0.55, z);
+    scene.add(mesh);
+    localBots.push({
+      id: cfg.id,
+      kit: cfg.kit,
+      mesh,
+      hp: cfg.maxHp,
+      maxHp: cfg.maxHp,
+      alive: true,
+      respawnTimer: 0,
+      radius: cfg.radius,
+      angle: cfg.angle,
+      speed: cfg.speed,
+      vy: 0,
+      y: 0.55,
+      fireCd: 1.5 + Math.random() * 1.5
+    });
+  }
+}
+
+function resetLocalArenaMatch() {
+  localMatchResetting = false;
+  localState.matchRemaining = 300;
+  localState.breachProgress = 0;
+  localState.hp = localState.maxHp;
+  localState.alive = true;
+  if (localMesh) localMesh.visible = true;
+  if (playerBody) {
+    playerBody.setTranslation({ x: 0, y: 2.0, z: 12 }, true);
+    playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  }
+  for (const cr of crates.values()) {
+    cr.hp = 100;
+    cr.mesh.visible = true;
+    cr.collider?.setEnabled(true);
+  }
+  spawnLocalBots();
+  updateLocalHudBanner();
+}
+
+function enableLocalArenaMode() {
+  if (localMode) return;
+  localMode = true;
+  localMatchResetting = false;
+  if (localBots.length === 0) {
+    spawnLocalBots();
+  }
+  updateLocalHudBanner();
+}
+
+function disableLocalArenaMode() {
+  if (!localMode) return;
+  localMode = false;
+  localMatchResetting = false;
+  for (const b of localBots) {
+    scene.remove(b.mesh);
+  }
+  localBots.length = 0;
+  updateLocalHudBanner();
+}
+
 function handleNetMessage(msg) {
   if (msg.type === 'welcome' || msg.type === 'room_snapshot') {
+    disableLocalArenaMode();
     localState.matchRemaining = msg.matchRemaining ?? 300;
     localState.breachProgress = msg.breachProgress ?? 0;
     (msg.players || []).forEach(upsertRemotePlayer);
@@ -267,6 +362,7 @@ function animate() {
       raycaster.set(camera.position, dir);
       const targets = [
         ...Array.from(remotePlayers.values()).map((r) => r.mesh),
+        ...localBots.filter((b) => b.alive).map((b) => b.mesh),
         ...Array.from(crates.values()).filter((c) => c.mesh.visible).map((c) => c.mesh)
       ];
       const hits = raycaster.intersectObjects(targets, true);
@@ -275,6 +371,20 @@ function animate() {
         if (hitObj.userData.playerId) {
           sfx.hit();
           net?.send({ type: 'hit_player', targetId: hitObj.userData.playerId, damage: 22 });
+        } else if (hitObj.userData.botId) {
+          sfx.hit();
+          const bot = localBots.find((b) => b.id === hitObj.userData.botId);
+          if (bot && bot.alive) {
+            bot.hp = Math.max(0, bot.hp - 25);
+            if (bot.hp === 0) {
+              bot.alive = false;
+              bot.mesh.visible = false;
+              bot.respawnTimer = 3.0;
+              localKills += 1;
+              sfx.crateBreak();
+              updateLocalHudBanner();
+            }
+          }
         } else if (hitObj.userData.crateId) {
           sfx.hit();
           const cr = crates.get(hitObj.userData.crateId);
@@ -292,10 +402,100 @@ function animate() {
       net?.send({ type: 'breach_hold', active: act.breach });
     }
 
-    netSyncAccum += dt;
-    if (netSyncAccum >= 0.05) {
-      netSyncAccum = 0;
-      net?.send({ type: 'state', x: pNew.x, y: pNew.y, z: pNew.z, ry: controls.yaw });
+    if (localMode) {
+      // Local Match Timer & Vault Breach Objective
+      if (!localMatchResetting) {
+        localState.matchRemaining = Math.max(0, localState.matchRemaining - dt);
+        const nearVault = Math.hypot(pNew.x, pNew.z) <= 5.5;
+        if (localState.alive && act.breach && nearVault) {
+          localState.breachProgress = Math.min(20, localState.breachProgress + dt);
+        } else if (localState.breachProgress > 0) {
+          localState.breachProgress = Math.max(0, localState.breachProgress - 0.5 * dt);
+        }
+
+        if (localState.breachProgress >= 20 || localState.matchRemaining <= 0) {
+          localMatchResetting = true;
+          const reason = localState.breachProgress >= 20 ? 'VAULT BREACHED!' : 'TIME UP!';
+          updateLocalHudBanner(`Solo AI Arena | ${reason} Resetting...`);
+          setTimeout(() => {
+            if (localMode) resetLocalArenaMatch();
+          }, 3000);
+        }
+      }
+
+      // Local AI Bots Patrol, Jump-Pad Hops & Combat
+      for (const bot of localBots) {
+        if (!bot.alive) {
+          bot.respawnTimer -= dt;
+          if (bot.respawnTimer <= 0) {
+            bot.alive = true;
+            bot.hp = bot.maxHp;
+            bot.angle = Math.random() * Math.PI * 2;
+            bot.y = 0.55;
+            bot.vy = 0;
+            bot.mesh.visible = true;
+          }
+          continue;
+        }
+
+        const prevX = bot.mesh.position.x;
+        const prevZ = bot.mesh.position.z;
+        bot.angle += bot.speed * dt;
+        const wobble = Math.sin(clock.elapsedTime * 1.7 + bot.radius) * 1.6;
+        const r = Math.max(4.5, Math.min(16.5, bot.radius + wobble));
+        const nx = Math.cos(bot.angle) * r;
+        const nz = Math.sin(bot.angle) * r;
+
+        // Bot jump-pad check
+        for (const pad of jumpPads) {
+          if (Math.hypot(nx - pad.position.x, nz - pad.position.z) < 1.5 && bot.y <= 0.65) {
+            bot.vy = 11.0;
+          }
+        }
+        bot.vy -= 18.0 * dt;
+        bot.y += bot.vy * dt;
+        if (bot.y <= 0.55) {
+          bot.y = 0.55;
+          bot.vy = 0;
+        }
+
+        bot.mesh.position.set(nx, bot.y, nz);
+        const dx = nx - prevX;
+        const dz = nz - prevZ;
+        if (dx * dx + dz * dz > 0.0001) {
+          bot.mesh.rotation.y = Math.atan2(dx, dz);
+        }
+
+        // Occasional bot fire if player is visible & within 16m
+        bot.fireCd -= dt;
+        const distToPlayer = Math.hypot(pNew.x - nx, pNew.z - nz);
+        if (bot.fireCd <= 0 && distToPlayer < 16 && localState.alive && localState.cloakTimer <= 0) {
+          bot.fireCd = 2.0 + Math.random() * 1.4;
+          const bOrigin = new THREE.Vector3(nx, bot.y + 0.9, nz);
+          const toPlayer = new THREE.Vector3(pNew.x - nx, pNew.y - (bot.y + 0.9), pNew.z - nz).normalize();
+          spawnTracer(bOrigin, toPlayer, 0xf59e0b);
+          if (Math.random() < 0.45) {
+            localState.hp = Math.max(0, localState.hp - 6);
+            if (localState.hp === 0) {
+              localState.alive = false;
+              localMesh.visible = false;
+              setTimeout(() => {
+                if (!localMode) return;
+                localState.alive = true;
+                localState.hp = localState.maxHp;
+                localMesh.visible = true;
+                playerBody.setTranslation({ x: 0, y: 2.0, z: 12 }, true);
+              }, 3000);
+            }
+          }
+        }
+      }
+    } else {
+      netSyncAccum += dt;
+      if (netSyncAccum >= 0.05) {
+        netSyncAccum = 0;
+        net?.send({ type: 'state', x: pNew.x, y: pNew.y, z: pNew.z, ry: controls.yaw });
+      }
     }
 
     for (const r of remotePlayers.values()) {
@@ -317,23 +517,30 @@ function animate() {
   composer.render();
 }
 
-const DEFAULT_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
+const DEFAULT_WS_URL = (import.meta.env.VITE_WS_URL || '').trim();
 const wsInputEl = document.getElementById('ws-input');
 if (wsInputEl) wsInputEl.value = DEFAULT_WS_URL;
 
 document.getElementById('btn-play').addEventListener('click', async () => {
   const kit = document.getElementById('kit-select').value;
   const room = document.getElementById('room-input').value.trim() || 'alpha';
+  currentRoomName = room;
   const wsUrl = (wsInputEl?.value || '').trim() || DEFAULT_WS_URL;
 
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
-  document.getElementById('hud-room').textContent = `Room: ${room}`;
+  document.getElementById('hud-room').textContent = wsUrl ? `Room: ${room}` : 'Solo AI Arena | KOs: 0';
 
   await initPhysics(kit);
-  net = new NetworkClient(handleNetMessage, (st) => {
-    document.getElementById('lobby-status').textContent = st;
-  });
+  net = new NetworkClient(
+    handleNetMessage,
+    (st) => {
+      document.getElementById('lobby-status').textContent = st;
+    },
+    () => {
+      enableLocalArenaMode();
+    }
+  );
   net.connect(wsUrl, room, kit);
   running = true;
 });
