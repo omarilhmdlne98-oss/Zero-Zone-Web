@@ -6,7 +6,14 @@ const MATCH_DURATION_SEC = 300; // 5-minute match timer
 const VAULT_BREACH_TARGET_SEC = 20; // 20-second Vault Breach event
 const RESPAWN_DELAY_MS = 3000;
 
-const KIT_MAX_HP = { vanguard: 100, spectre: 85, juggernaut: 160 };
+const KIT_MAX_HP = { vanguard: 100, spectre: 90, juggernaut: 150 };
+const KIT_MAX_SHIELD = { vanguard: 50, spectre: 40, juggernaut: 100 };
+const HIT_ZONE_MULTIPLIERS = { head: 2.2, torso: 1.0, limb: 0.75 };
+const WEAPON_DISPLAY_NAMES = {
+  rifle: 'VX-47 Assault Rifle',
+  railgun: 'XR-9 Railgun',
+  shotgun: 'M-12 Heavy Shotgun'
+};
 const OPERATOR_CLASS_NAMES = {
   vanguard: 'Vanguard',
   spectre: 'Spectre',
@@ -81,16 +88,21 @@ function serializePlayerState(player) {
     y: player.y,
     z: player.z,
     ry: player.ry,
+    weapon: player.weaponId,
     // UE5 C++ UZeroZoneWebSocketSubsystem fields
     playerId: player.id,
     operatorClass: toOperatorClass(player.kit),
+    weaponId: player.weaponId,
     pitch: player.pitch,
     yaw: player.yaw,
     roll: player.roll,
     health: player.hp,
     shield: player.shield,
     isFiring: player.isFiring,
-    isAbilityActive: player.isAbilityActive
+    isAbilityActive: player.isAbilityActive,
+    isADS: player.isADS,
+    isCrouching: player.isCrouching,
+    leanAngle: player.leanAngle
   };
 }
 
@@ -365,11 +377,21 @@ wss.on('connection', (ws, req) => {
       player.z = Number(data.z) || 0;
       player.ry = Number(data.ry) || 0;
       player.yaw = player.ry;
+      if (data.weapon || data.weaponId) {
+        player.weaponId = String(data.weapon || data.weaponId).slice(0, 24);
+      }
+      if (typeof data.isADS === 'boolean') player.isADS = data.isADS;
+      if (typeof data.isCrouching === 'boolean') player.isCrouching = data.isCrouching;
+      if (Number.isFinite(Number(data.leanAngle))) player.leanAngle = Number(data.leanAngle);
       broadcast(currentRoom, serializePlayerState(player), playerId);
     } else if (data.type === 'player_state' && player.alive) {
       if (data.operatorClass) {
         player.kit = normalizeKit(data.operatorClass);
         player.maxHp = KIT_MAX_HP[player.kit];
+        player.maxShield = KIT_MAX_SHIELD[player.kit];
+      }
+      if (data.weaponId || data.weapon) {
+        player.weaponId = String(data.weaponId || data.weapon).slice(0, 24);
       }
       player.x = Number(data.x) || 0;
       player.y = Number(data.y) || 0;
@@ -383,19 +405,25 @@ wss.on('connection', (ws, req) => {
       }
       player.isFiring = Boolean(data.isFiring);
       player.isAbilityActive = Boolean(data.isAbilityActive);
+      player.isADS = Boolean(data.isADS);
+      player.isCrouching = Boolean(data.isCrouching);
+      player.leanAngle = Number(data.leanAngle) || 0;
       broadcast(currentRoom, serializePlayerState(player), playerId);
     } else if (data.type === 'fire' && player.alive) {
       const now = Date.now();
-      if (now - player.lastFireAt < 140) return; // server fire-rate guard
+      if (now - player.lastFireAt < 95) return; // server fire-rate guard
       player.lastFireAt = now;
-      broadcast(currentRoom, { type: 'player_fired', id: playerId, origin: data.origin, dir: data.dir }, playerId);
-      broadcast(currentRoom, { type: 'combat_event', event: 'fire', playerId, targetId: '', value: 1 }, playerId);
+      const weaponId = String(data.weapon || player.weaponId || 'rifle');
+      broadcast(currentRoom, { type: 'player_fired', id: playerId, origin: data.origin, dir: data.dir, weapon: weaponId, color: data.color }, playerId);
+      broadcast(currentRoom, { type: 'combat_event', event: 'fire', playerId, targetId: '', value: 1, weapon: weaponId, hitZone: 'none' }, playerId);
     } else if (data.type === 'hit_player' && player.alive) {
       const target = currentRoom.players.get(String(data.targetId));
-      applyDamageToPlayer(currentRoom, player, target, data.damage);
+      applyDamageToPlayer(currentRoom, player, target, data.damage, data.hitZone || 'torso', data.weapon || player.weaponId);
     } else if (data.type === 'combat_event' && player.alive) {
       const eventName = String(data.event || '');
       const eventLower = eventName.toLowerCase();
+      const weaponId = String(data.weapon || player.weaponId || 'rifle');
+      const hitZone = String(data.hitZone || 'torso');
       broadcast(
         currentRoom,
         {
@@ -403,13 +431,15 @@ wss.on('connection', (ws, req) => {
           event: eventName,
           playerId,
           targetId: String(data.targetId || ''),
-          value: Number(data.value) || 0
+          value: Number(data.value) || 0,
+          weapon: weaponId,
+          hitZone
         },
         playerId
       );
       if (eventLower === 'fire' || eventLower === 'shoot') {
         const now = Date.now();
-        if (now - player.lastFireAt >= 140) {
+        if (now - player.lastFireAt >= 95) {
           player.lastFireAt = now;
           broadcast(
             currentRoom,
@@ -417,14 +447,15 @@ wss.on('connection', (ws, req) => {
               type: 'player_fired',
               id: playerId,
               origin: data.origin || [player.x, player.y, player.z],
-              dir: data.dir || [0, 0, -1]
+              dir: data.dir || [0, 0, -1],
+              weapon: weaponId
             },
             playerId
           );
         }
       } else if ((eventLower === 'hit' || eventLower === 'damage' || eventLower === 'hit_player') && data.targetId) {
         const target = currentRoom.players.get(String(data.targetId));
-        applyDamageToPlayer(currentRoom, player, target, data.value);
+        applyDamageToPlayer(currentRoom, player, target, data.value, hitZone, weaponId);
       }
     } else if (data.type === 'hit_crate' && player.alive) {
       const crate = currentRoom.crates[String(data.crateId)];
