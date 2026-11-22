@@ -1687,7 +1687,7 @@ function animate() {
       animateOperatorRig(r.mesh, dt, spd, r.isCrouching, !r.alive, r.deathTimer);
     }
 
-    // Rotate Vault Rings & Sinai Comms Radar Dishes
+    // Rotate Vault Rings & Sinai Comms Radar Dishes + Animate Sky, Suez Canal Water & Desert Dust
     if (vault.userData.rings) {
       vault.userData.rings[0].rotation.z += dt * 0.6;
       vault.userData.rings[1].rotation.z -= dt * 0.85;
@@ -1696,6 +1696,17 @@ function animate() {
       for (const dish of arenaEnv.radarDishes) {
         dish.rotation.y += dt * 0.9;
       }
+    }
+    if (skyDome?.userData?.skyMaterial?.uniforms) {
+      skyDome.userData.skyMaterial.uniforms.uTime.value = clock.elapsedTime;
+    }
+    if (arenaEnv.waterMaterial?.uniforms) {
+      arenaEnv.waterMaterial.uniforms.uTime.value = clock.elapsedTime;
+      arenaEnv.waterMaterial.uniforms.uCameraPos.value.copy(camera.position);
+    }
+    if (arenaEnv.dustPoints) {
+      arenaEnv.dustPoints.position.x = Math.sin(clock.elapsedTime * 0.22) * 3.5;
+      arenaEnv.dustPoints.position.z = Math.cos(clock.elapsedTime * 0.18) * 2.5;
     }
 
     // Explosive Fuel Barrel Respawn Timer (25s)

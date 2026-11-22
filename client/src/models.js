@@ -38,22 +38,135 @@ const SKY_VERT = `
 `;
 
 const SKY_FRAG = `
+  uniform float uTime;
+  uniform vec3 uSunDir;
   varying vec3 vWorldPos;
+
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float noise2D(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
   void main() {
-    float h = normalize(vWorldPos).y;
-    vec3 zenith = vec3(0.32, 0.54, 0.76);
-    vec3 mid = vec3(0.68, 0.76, 0.84);
-    vec3 horizon = vec3(0.847, 0.706, 0.502);
-    vec3 col = mix(horizon, mid, smoothstep(0.0, 0.25, h));
-    col = mix(col, zenith, smoothstep(0.22, 0.82, h));
+    vec3 dir = normalize(vWorldPos);
+    float h = clamp(dir.y, -0.05, 1.0);
+    vec3 sunDir = normalize(uSunDir);
+    float sunDot = max(0.0, dot(dir, sunDir));
+
+    // Rayleigh / Mie Sinai Desert Scattering Gradient
+    vec3 zenith = vec3(0.22, 0.48, 0.78);
+    vec3 midSky = vec3(0.58, 0.73, 0.86);
+    vec3 dustHorizon = vec3(0.847, 0.706, 0.502);
+
+    vec3 col = mix(dustHorizon, midSky, smoothstep(0.0, 0.28, max(0.0, h)));
+    col = mix(col, zenith, smoothstep(0.24, 0.88, max(0.0, h)));
+
+    // Subtle high-altitude drifting desert cirrus clouds
+    if (h > 0.06) {
+      vec2 cloudUV = dir.xz / (h + 0.18) * 1.35 + vec2(uTime * 0.012, -uTime * 0.006);
+      float c1 = noise2D(cloudUV * 2.2);
+      float c2 = noise2D(cloudUV * 4.8 + 3.7);
+      float cloud = smoothstep(0.56, 0.86, c1 * 0.65 + c2 * 0.35) * smoothstep(0.06, 0.28, h);
+      col = mix(col, vec3(0.99, 0.95, 0.86), cloud * 0.28);
+    }
+
+    // Mie forward-scattering golden solar aureole & crisp sun disc
+    float mieHalo = pow(sunDot, 7.0) * 0.36 + pow(sunDot, 42.0) * 0.45;
+    float sunDisc = smoothstep(0.9982, 0.9996, sunDot);
+    col += vec3(1.0, 0.88, 0.62) * mieHalo + vec3(1.0, 0.98, 0.88) * sunDisc * 1.35;
+
+    // Warm desert dust band right at the horizon
+    float horizonDust = pow(1.0 - clamp(abs(h) * 3.4, 0.0, 1.0), 2.4);
+    col = mix(col, dustHorizon, horizonDust * 0.45);
+
     gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+const SUEZ_WATER_VERT = `
+  varying vec3 vWorldPos;
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+
+const SUEZ_WATER_FRAG = `
+  uniform float uTime;
+  uniform vec3 uSunDir;
+  uniform vec3 uCameraPos;
+  varying vec3 vWorldPos;
+  varying vec2 vUv;
+
+  float waveLayer(vec2 p, float t) {
+    float w1 = sin(p.x * 1.45 + t * 1.85 + cos(p.y * 1.15 - t * 1.1));
+    float w2 = cos(p.x * 2.75 - t * 1.45 + sin(p.y * 2.35 + t * 1.65));
+    float w3 = sin((p.x + p.y) * 4.1 - t * 2.2);
+    return (w1 * 0.45 + w2 * 0.35 + w3 * 0.20);
+  }
+
+  void main() {
+    vec2 p = vWorldPos.xz;
+    // Dual-layer flowing Suez Canal current ripples
+    float e = 0.14;
+    float h0 = waveLayer(p * 0.85, uTime);
+    float hx = waveLayer((p + vec2(e, 0.0)) * 0.85, uTime);
+    float hz = waveLayer((p + vec2(0.0, e)) * 0.85, uTime);
+    vec3 n = normalize(vec3((h0 - hx) * 1.25, 1.0, (h0 - hz) * 1.25));
+
+    vec3 v = normalize(uCameraPos - vWorldPos);
+    vec3 l = normalize(uSunDir);
+    vec3 hVec = normalize(l + v);
+
+    float fresnel = pow(max(0.001, 1.0 - clamp(dot(n, v), 0.0, 1.0)), 3.2);
+    float spec = pow(max(0.0, dot(n, hVec)), 72.0) * 1.35 + pow(max(0.0, dot(n, hVec)), 18.0) * 0.25;
+
+    // Deep canal center vs turquoise shallow banks
+    float bankDist = abs(vWorldPos.z) / 8.2;
+    vec3 deepCol = vec3(0.07, 0.28, 0.35);
+    vec3 shallowCol = vec3(0.18, 0.48, 0.52);
+    vec3 skyReflect = vec3(0.78, 0.72, 0.58);
+
+    vec3 waterCol = mix(deepCol, shallowCol, smoothstep(0.35, 0.95, bankDist) + h0 * 0.08);
+    waterCol = mix(waterCol, skyReflect, fresnel * 0.58);
+    waterCol += vec3(1.0, 0.94, 0.78) * spec;
+
+    // Shoreline foam along East & West Canal banks + wake foam around 3 Pontoon Bridges (x = -28, 0, +28)
+    float bankFoam = smoothstep(0.82, 0.99, bankDist + h0 * 0.045);
+    float bridgeDist = min(abs(vWorldPos.x), min(abs(vWorldPos.x + 28.0), abs(vWorldPos.x - 28.0)));
+    float pontoonFoam = (1.0 - smoothstep(2.1, 3.3, bridgeDist)) * (0.45 + 0.55 * abs(h0));
+    float totalFoam = clamp(bankFoam + pontoonFoam * 0.75, 0.0, 1.0);
+
+    waterCol = mix(waterCol, vec3(0.92, 0.90, 0.82), totalFoam * 0.72);
+
+    // Distance fog blend matching scene.fog (0xd8b480, density 0.0042)
+    float camDist = length(uCameraPos - vWorldPos);
+    float fogFactor = 1.0 - exp(-0.0042 * 0.0042 * camDist * camDist);
+    waterCol = mix(waterCol, vec3(0.847, 0.706, 0.502), clamp(fogFactor, 0.0, 1.0));
+
+    gl_FragColor = vec4(waterCol, 0.91);
   }
 `;
 
 // --- Procedural PBR Canvas Textures ---
 const _texCache = {};
 
-function makeCanvasTexture(key, size, drawFn, repeatX = 1, repeatY = 1) {
+function makeCanvasTexture(key, size, drawFn, repeatX = 1, repeatY = 1, isLinear = false) {
   if (_texCache[key]) return _texCache[key];
   const c = document.createElement('canvas');
   c.width = size;
@@ -64,7 +177,7 @@ function makeCanvasTexture(key, size, drawFn, repeatX = 1, repeatY = 1) {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = isLinear ? THREE.NoColorSpace : THREE.SRGBColorSpace;
   _texCache[key] = tex;
   return tex;
 }
@@ -163,15 +276,49 @@ export function getSandTexture(repX = 12, repY = 6) {
   return makeCanvasTexture(`sinai_sand_${repX}_${repY}`, 256, (ctx, s) => {
     ctx.fillStyle = '#d4b27c';
     ctx.fillRect(0, 0, s, s);
-    // Wind-blown desert dune ripples
-    for (let y = 0; y < s; y += 12) {
-      ctx.fillStyle = (y / 12) % 2 === 0 ? 'rgba(229,198,144,0.28)' : 'rgba(176,138,84,0.22)';
-      ctx.fillRect(0, y, s, 6);
+    // Wind-blown desert dune ripples with sinusoidal micro-ridges
+    for (let y = 0; y < s; y += 4) {
+      const wave = Math.sin((y / s) * Math.PI * 16);
+      const alpha = 0.16 + Math.abs(wave) * 0.18;
+      ctx.fillStyle = wave > 0 ? `rgba(238,208,154,${alpha.toFixed(2)})` : `rgba(164,126,74,${alpha.toFixed(2)})`;
+      ctx.fillRect(0, y, s, 2);
     }
-    for (let i = 0; i < 2400; i++) {
-      const shade = 168 + Math.floor(Math.random() * 55);
+    for (let i = 0; i < 2800; i++) {
+      const shade = 165 + Math.floor(Math.random() * 62);
       ctx.fillStyle = `rgb(${shade},${Math.floor(shade * 0.84)},${Math.floor(shade * 0.58)})`;
       ctx.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 3, 2);
+    }
+  }, repX, repY);
+}
+
+export function getSandNormalTexture(repX = 36, repY = 36) {
+  return makeCanvasTexture(`sinai_sand_norm_${repX}_${repY}`, 128, (ctx, s) => {
+    for (let y = 0; y < s; y++) {
+      const ny = Math.floor(128 + Math.cos((y / s) * Math.PI * 16) * 34);
+      for (let x = 0; x < s; x += 4) {
+        const nx = Math.floor(128 + Math.sin((x / s) * Math.PI * 8 + (y / s) * 6.0) * 14);
+        ctx.fillStyle = `rgb(${nx},${ny},255)`;
+        ctx.fillRect(x, y, 4, 1);
+      }
+    }
+  }, repX, repY, true);
+}
+
+export function getCamoNetTexture(repX = 3, repY = 2) {
+  return makeCanvasTexture(`camo_net_${repX}_${repY}`, 128, (ctx, s) => {
+    ctx.fillStyle = '#9c8357';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 160; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#78633e' : '#b89f6f';
+      ctx.fillRect(Math.random() * s, Math.random() * s, 10 + Math.random() * 14, 6 + Math.random() * 10);
+    }
+    ctx.strokeStyle = 'rgba(42,34,21,0.45)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= s; i += 16) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0); ctx.lineTo(i, s);
+      ctx.moveTo(0, i); ctx.lineTo(s, i);
+      ctx.stroke();
     }
   }, repX, repY);
 }
@@ -587,12 +734,18 @@ export function animateOperatorRig(root, dt, moveSpeed = 0, isCrouching = false,
 // --- 1973 Sinai Desert Open-World Terrain (400m x 400m) ---
 export function createSkyDome() {
   const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uSunDir: { value: new THREE.Vector3(42, 68, 32).normalize() }
+    },
     vertexShader: SKY_VERT,
     fragmentShader: SKY_FRAG,
     side: THREE.BackSide,
     depthWrite: false
   });
-  return new THREE.Mesh(new THREE.SphereGeometry(320, 24, 16), mat);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(320, 28, 18), mat);
+  mesh.userData.skyMaterial = mat;
+  return mesh;
 }
 
 export function createVaultStructure() {
@@ -645,14 +798,21 @@ export function createArenaEnvironment() {
 
   const sandMat = applyBattlefieldPBRShader(
     new THREE.MeshStandardMaterial({
-      map: getSandTexture(32, 32),
+      map: getSandTexture(36, 36),
+      normalMap: getSandNormalTexture(44, 44),
+      normalScale: new THREE.Vector2(0.45, 0.45),
       color: 0xffffff,
       vertexColors: true
     }),
     'sinai_sand'
   );
   const bermMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getSandTexture(8, 2), color: 0xd1ac72 }),
+    new THREE.MeshStandardMaterial({
+      map: getSandTexture(10, 3),
+      normalMap: getSandNormalTexture(16, 6),
+      normalScale: new THREE.Vector2(0.38, 0.38),
+      color: 0xd1ac72
+    }),
     'berm_earth'
   );
   const bunkerMat = applyBattlefieldPBRShader(
@@ -671,12 +831,36 @@ export function createArenaEnvironment() {
     new THREE.MeshStandardMaterial({ map: getCatwalkGrateTexture(6, 2), color: 0x7a7465 }),
     'catwalk_grate'
   );
-  const rockMat = new THREE.MeshStandardMaterial({
-    map: getConcreteTexture(2, 2),
-    color: 0x9c825e,
+  const rockMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({
+      map: getConcreteTexture(2, 2),
+      color: 0xa68c67
+    }),
+    'sinai_limestone'
+  );
+  const palmTrunkMat = new THREE.MeshStandardMaterial({
+    map: getSandbagTexture(2, 4),
+    color: 0x6e5337,
     roughness: 0.92,
-    metalness: 0.04
+    metalness: 0.02
   });
+  const palmCrownMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ color: 0x4c6b3c }),
+    'oasis_palm_foliage'
+  );
+  const scrubMat = new THREE.MeshStandardMaterial({
+    color: 0x786d46,
+    roughness: 0.94,
+    metalness: 0.02
+  });
+  const camoNetMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({
+      map: getCamoNetTexture(3, 2),
+      color: 0xa89064,
+      side: THREE.DoubleSide
+    }),
+    'desert_camo_net'
+  );
   const sandbagMat = new THREE.MeshStandardMaterial({ map: getSandbagTexture(2, 1), color: 0xcbb07f, roughness: 0.9, metalness: 0.04 });
   const cautionMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(4, 1), roughness: 0.55, metalness: 0.2 });
   const slitMat = new THREE.MeshBasicMaterial({ color: 0x151311 });
@@ -699,7 +883,7 @@ export function createArenaEnvironment() {
     return mesh;
   };
 
-  // --- 1. Continuous 400m x 400m Open-World Sinai Desert Heightfield (ZERO enclosing box walls!) ---
+  // --- 1. Continuous 400m x 400m Open-World Sinai Desert Heightfield with Slope-Blended Limestone & Wind Ripples ---
   const terrainSize = UPPER_COMBAT_NETWORK.terrain_size_m;
   const gridSegs = 112;
   const terrainGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, gridSegs, gridSegs);
@@ -718,36 +902,51 @@ export function createArenaEnvironment() {
     trimeshVertices[i * 3] = vx;
     trimeshVertices[i * 3 + 1] = vy;
     trimeshVertices[i * 3 + 2] = vz;
+  }
 
-    // Vertex color shading: wet dark canal sand -> warm golden desert dunes -> sun-bleached rocky ridges
-    let r = 0.92;
-    let g = 0.81;
-    let b = 0.63;
-    if (vy < -0.15) {
-      // Wet canal bank & bed
-      r = 0.56;
-      g = 0.48;
-      b = 0.36;
+  terrainGeo.computeVertexNormals();
+  const normAttr = terrainGeo.attributes.normal;
+
+  for (let i = 0; i < posAttr.count; i++) {
+    const vy = posAttr.getY(i);
+    const ny = Math.abs(normAttr.getY(i));
+    const slope = 1.0 - THREE.MathUtils.clamp(ny, 0.0, 1.0);
+    const rockFactor = THREE.MathUtils.smoothstep(slope, 0.09, 0.34);
+
+    // Base wind-rippled golden sand -> weathered Sinai limestone on steep slopes -> wet dark silt near canal
+    let r = 0.90;
+    let g = 0.78;
+    let b = 0.59;
+    if (vy < -0.05) {
+      // Wet canal bank & bed silt
+      const wetT = THREE.MathUtils.clamp((-0.05 - vy) / 1.2, 0.0, 1.0);
+      r = THREE.MathUtils.lerp(0.76, 0.48, wetT);
+      g = THREE.MathUtils.lerp(0.65, 0.42, wetT);
+      b = THREE.MathUtils.lerp(0.48, 0.32, wetT);
     } else if (vy > 4.2) {
       // Distant desert mountain ridge rock
       const t = Math.min(1, (vy - 4.2) / 14.0);
-      r = 0.86 - t * 0.18;
-      g = 0.72 - t * 0.17;
-      b = 0.54 - t * 0.14;
+      r = 0.84 - t * 0.20;
+      g = 0.70 - t * 0.18;
+      b = 0.52 - t * 0.15;
     } else {
-      // Subtle dune crest highlight
-      const crest = Math.min(1, vy / 3.8);
-      r = 0.88 + crest * 0.08;
-      g = 0.76 + crest * 0.08;
-      b = 0.58 + crest * 0.07;
+      const crest = Math.min(1, Math.max(0, vy) / 3.8);
+      r = 0.87 + crest * 0.09;
+      g = 0.75 + crest * 0.09;
+      b = 0.57 + crest * 0.08;
     }
+
+    // Slope-based limestone rock exposure
+    r = THREE.MathUtils.lerp(r, 0.64, rockFactor * 0.85);
+    g = THREE.MathUtils.lerp(g, 0.55, rockFactor * 0.85);
+    b = THREE.MathUtils.lerp(b, 0.42, rockFactor * 0.85);
+
     colors[i * 3] = r;
     colors[i * 3 + 1] = g;
     colors[i * 3 + 2] = b;
   }
 
   terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  terrainGeo.computeVertexNormals();
 
   const rawIndex = terrainGeo.index.array;
   const trimeshIndices = new Uint32Array(rawIndex.length);
@@ -768,19 +967,22 @@ export function createArenaEnvironment() {
     }
   }
 
-  // --- 2. Wide Suez Canal Water Channel (400m length x 16m width, z in [-8, 8]) ---
-  const waterMat = new THREE.MeshStandardMaterial({
-    map: getWaterTexture(24, 3),
-    color: 0x246f7b,
-    roughness: 0.2,
-    metalness: 0.35,
+  // --- 2. Animated Dual-Layer Normal-Mapped Suez Canal Water Shader (400m x 16.4m, z in [-8.2, 8.2]) ---
+  const waterShaderMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uSunDir: { value: new THREE.Vector3(42, 68, 32).normalize() },
+      uCameraPos: { value: new THREE.Vector3(0, 2.0, 24.0) }
+    },
+    vertexShader: SUEZ_WATER_VERT,
+    fragmentShader: SUEZ_WATER_FRAG,
     transparent: true,
-    opacity: 0.88
+    depthWrite: false
   });
-  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 16.4), waterMat);
+  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 16.4, 64, 8), waterShaderMat);
   waterMesh.rotation.x = -Math.PI / 2;
   waterMesh.position.set(0, -0.35, 0);
-  waterMesh.receiveShadow = true;
+  waterMesh.receiveShadow = false;
   waterMesh.castShadow = false;
   group.add(waterMesh);
 
@@ -792,12 +994,9 @@ export function createArenaEnvironment() {
     { x: 46.0, w: 24.0 }
   ];
   for (const bs of bermSpans) {
-    // Solid compacted berm core (blocks fire & forms towering sand wall)
     addStaticBox(bs.x, 2.15, -22.0, bs.w, 4.3, 3.6, bermMat, true, 0, 0, false);
-    // Sloped south-facing & north-facing desert sand embankments (castShadow = false for 2GB VRAM)
     addStaticBox(bs.x, 2.1, -19.2, bs.w, 0.75, 5.2, bermMat, false, -0.74, 0, false);
     addStaticBox(bs.x, 2.1, -24.8, bs.w, 0.75, 5.2, bermMat, false, 0.74, 0, false);
-    // Sandbag firing parapet along the 4.5m berm crest
     for (let sx = bs.x - bs.w * 0.44; sx <= bs.x + bs.w * 0.44; sx += 1.8) {
       sandbagInstances.push([sx, 4.72, -20.3, 0]);
     }
@@ -820,14 +1019,11 @@ export function createArenaEnvironment() {
     addStaticBox(seg.x, deckCenterY, seg.z, seg.width, seg.height, seg.depth, mat, true, seg.rx, seg.rz, deckCastsShadow);
 
     if (seg.kind === 'pontoon') {
-      // Heavy military float pontoons across the 16m Suez Canal
       for (const fz of [-6.2, -3.1, 0, 3.1, 6.2]) {
         addStaticBox(seg.x, -0.1, fz, seg.width + 0.7, 0.42, 1.5, floatMat, false, 0, 0, false);
       }
-      // Gentle approach ramps connecting Canal banks to Pontoon Bridge deck (y = 0.45m)
       addStaticBox(seg.x, 0.16, 10.0, seg.width, 0.22, 2.6, pontoonMat, true, 0.18, 0, false);
       addStaticBox(seg.x, 0.16, -10.0, seg.width, 0.22, 2.6, pontoonMat, true, -0.18, 0, false);
-      // Low steel wheel curbs + stanchions along bridge edges
       for (const side of [-1, 1]) {
         const rx = seg.x + side * (seg.width * 0.5 - 0.12);
         addStaticBox(rx, 0.68, 0, 0.16, 0.32, seg.depth - 0.4, cautionMat, false, 0, 0, false);
@@ -883,7 +1079,8 @@ export function createArenaEnvironment() {
     group.add(postInst);
   }
 
-  // --- 5. 6 Reinforced Bar-Lev Desert Concrete Bunkers on Strategic Open-World Hills ---
+  // --- 5. 6 Reinforced Bar-Lev Concrete Bunkers on Hills + Camouflage Netting Canopies ---
+  const camoCanopyCoords = [];
   for (const bk of UPPER_COMBAT_NETWORK.bunker_hills) {
     const by = getSinaiTerrainHeight(bk.x, bk.z);
     addStaticBox(bk.x, by + 0.55, bk.z, 4.8, 1.1, 3.4, bunkerMat, true, 0, 0, true);
@@ -895,7 +1092,29 @@ export function createArenaEnvironment() {
     for (let ox = -1.8; ox <= 1.8; ox += 0.9) {
       sandbagInstances.push([bk.x + ox, by + 0.24, bk.z + bk.facingZ * 2.0, 0]);
     }
+    // Overhead desert camo netting canopy & support poles
+    camoCanopyCoords.push([bk.x, by + 3.05, bk.z]);
+    for (const px of [-2.7, 2.7]) {
+      for (const pz of [-2.1, 2.1]) {
+        stanchionPositions.push([bk.x + px, by + 2.6, bk.z + pz]);
+      }
+    }
     coverPoints.push({ x: bk.x, z: bk.z });
+  }
+
+  if (camoCanopyCoords.length > 0) {
+    const canopyGeo = new THREE.BoxGeometry(6.2, 0.08, 4.8);
+    const canopyInst = new THREE.InstancedMesh(canopyGeo, camoNetMat, camoCanopyCoords.length);
+    const dummy = new THREE.Object3D();
+    camoCanopyCoords.forEach(([cx, cy, cz], idx) => {
+      dummy.position.set(cx, cy, cz);
+      dummy.rotation.set(0.04 * (idx % 2 === 0 ? 1 : -1), 0, 0.03);
+      dummy.updateMatrix();
+      canopyInst.setMatrixAt(idx, dummy.matrix);
+    });
+    canopyInst.castShadow = false;
+    canopyInst.receiveShadow = true;
+    group.add(canopyInst);
   }
 
   // --- 6. Open-Field Tactical Trenches & Sandbag Emplacements Across +-80m Combat Zone ---
@@ -949,6 +1168,128 @@ export function createArenaEnvironment() {
     group.add(rockInst);
   }
 
+  // --- 8. West Bank Canal Oasis Date Palm Trees (2 InstancedMeshes: Trunks + Frond Crowns, castShadow = false) ---
+  const palmCoords = [
+    [-44, 14, 1.05], [-36, 17, 0.95], [-18, 13, 1.0], [-9, 15, 0.92],
+    [9, 15, 0.96], [19, 13, 1.04], [36, 17, 0.98], [45, 14, 1.08],
+    [-54, 28, 1.12], [54, 28, 1.06], [-35, 44, 0.94], [35, 44, 1.0],
+    [-62, 16, 1.02], [62, 16, 1.0]
+  ];
+  if (palmCoords.length > 0) {
+    const trunkGeo = new THREE.CylinderGeometry(0.16, 0.28, 4.6, 7);
+    const crownGeo = new THREE.ConeGeometry(2.15, 1.65, 7);
+    const trunkInst = new THREE.InstancedMesh(trunkGeo, palmTrunkMat, palmCoords.length);
+    const crownInst = new THREE.InstancedMesh(crownGeo, palmCrownMat, palmCoords.length * 2);
+    const dummy = new THREE.Object3D();
+
+    palmCoords.forEach(([px, pz, sc], idx) => {
+      const py = getSinaiTerrainHeight(px, pz);
+      const leanX = ((idx % 3) - 1) * 0.05;
+      const leanZ = ((idx % 2) - 0.5) * 0.05;
+
+      dummy.position.set(px, py + 2.25 * sc, pz);
+      dummy.rotation.set(leanX, idx * 1.1, leanZ);
+      dummy.scale.set(sc, sc, sc);
+      dummy.updateMatrix();
+      trunkInst.setMatrixAt(idx, dummy.matrix);
+
+      // Lower & upper frond canopy tiers
+      dummy.position.set(px + leanZ * 1.8, py + 4.45 * sc, pz + leanX * 1.8);
+      dummy.rotation.set(leanX * 1.2, idx * 0.8, leanZ * 1.2);
+      dummy.scale.set(sc * 1.15, sc * 0.72, sc * 1.15);
+      dummy.updateMatrix();
+      crownInst.setMatrixAt(idx * 2, dummy.matrix);
+
+      dummy.position.set(px + leanZ * 2.1, py + 5.0 * sc, pz + leanX * 2.1);
+      dummy.rotation.set(leanX * 1.4, idx * 0.8 + 0.45, leanZ * 1.4);
+      dummy.scale.set(sc * 0.78, sc * 0.65, sc * 0.78);
+      dummy.updateMatrix();
+      crownInst.setMatrixAt(idx * 2 + 1, dummy.matrix);
+
+      colliders.push({ x: px, y: py + 2.2 * sc, z: pz, hx: 0.32, hy: 2.2 * sc, hz: 0.32, rx: 0, rz: 0 });
+    });
+
+    trunkInst.castShadow = false;
+    trunkInst.receiveShadow = true;
+    crownInst.castShadow = false;
+    crownInst.receiveShadow = false;
+    group.add(trunkInst, crownInst);
+  }
+
+  // --- 9. Steel Czech-Hedgehog Anti-Tank Obstacles Along East Bank Berm & Canal Approaches (1 InstancedMesh) ---
+  const hedgehogCoords = [
+    [-38, -14], [-34, -15], [-21, -15], [-10, -16], [10, -16], [21, -15], [34, -15], [38, -14],
+    [-23, -22], [23, -22], [-5, -22], [5, -22], [-33, 13], [33, 13]
+  ];
+  if (hedgehogCoords.length > 0) {
+    const beamGeo = new THREE.BoxGeometry(0.14, 1.55, 0.14);
+    const beamInst = new THREE.InstancedMesh(beamGeo, steelMat, hedgehogCoords.length * 3);
+    const dummy = new THREE.Object3D();
+    const beamAngles = [
+      [0.62, 0.0, 0.55],
+      [-0.62, 1.05, 0.55],
+      [0.55, 2.1, -0.62]
+    ];
+    hedgehogCoords.forEach(([hx, hz], idx) => {
+      const hy = getSinaiTerrainHeight(hx, hz) + 0.54;
+      for (let b = 0; b < 3; b++) {
+        dummy.position.set(hx, hy, hz);
+        dummy.rotation.set(beamAngles[b][0], beamAngles[b][1] + idx * 0.3, beamAngles[b][2]);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        beamInst.setMatrixAt(idx * 3 + b, dummy.matrix);
+      }
+      colliders.push({ x: hx, y: hy, z: hz, hx: 0.58, hy: 0.58, hz: 0.58, rx: 0, rz: 0 });
+    });
+    beamInst.castShadow = false;
+    beamInst.receiveShadow = false;
+    group.add(beamInst);
+  }
+
+  // --- 10. Dry Sinai Desert Scrub Bushes Across Dunes (1 InstancedMesh, castShadow = false) ---
+  const scrubCoords = [
+    [-48, 36, 1.1], [-28, 42, 0.9], [-12, 34, 1.0], [12, 35, 0.95], [29, 41, 1.05], [48, 36, 1.15],
+    [-58, -12, 1.0], [58, -12, 1.1], [-46, -54, 1.2], [-18, -48, 0.9], [18, -48, 0.95], [46, -54, 1.15],
+    [-68, 38, 1.25], [68, 38, 1.2], [-66, -34, 1.1], [66, -34, 1.15], [-20, 12, 0.85], [20, 12, 0.88],
+    [-38, -28, 0.92], [38, -28, 0.95], [-16, -68, 1.1], [16, -68, 1.05], [-14, 62, 1.05], [14, 62, 1.0]
+  ];
+  if (scrubCoords.length > 0) {
+    const scrubGeo = new THREE.DodecahedronGeometry(0.55, 0);
+    const scrubInst = new THREE.InstancedMesh(scrubGeo, scrubMat, scrubCoords.length);
+    const dummy = new THREE.Object3D();
+    scrubCoords.forEach(([sx, sz, sc], idx) => {
+      const sy = getSinaiTerrainHeight(sx, sz);
+      dummy.position.set(sx, sy + 0.24 * sc, sz);
+      dummy.rotation.set(0, idx * 1.3, 0);
+      dummy.scale.set(sc * 1.35, sc * 0.68, sc * 1.25);
+      dummy.updateMatrix();
+      scrubInst.setMatrixAt(idx, dummy.matrix);
+    });
+    scrubInst.castShadow = false;
+    scrubInst.receiveShadow = false;
+    group.add(scrubInst);
+  }
+
+  // --- 11. Drifting Golden Desert Sand-Dust Motes in the Air (Lightweight THREE.Points) ---
+  const dustCount = 160;
+  const dustGeo = new THREE.BufferGeometry();
+  const dustPositions = new Float32Array(dustCount * 3);
+  for (let i = 0; i < dustCount; i++) {
+    dustPositions[i * 3] = (Math.sin(i * 12.9898) * 43758.5453 - Math.floor(Math.sin(i * 12.9898) * 43758.5453) - 0.5) * 150.0;
+    dustPositions[i * 3 + 1] = 0.8 + ((i * 0.618034) % 1) * 9.5;
+    dustPositions[i * 3 + 2] = (Math.cos(i * 78.233) * 19341.123 - Math.floor(Math.cos(i * 78.233) * 19341.123) - 0.5) * 150.0;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  const dustMat = new THREE.PointsMaterial({
+    color: 0xf4dca8,
+    size: 0.24,
+    transparent: true,
+    opacity: 0.42,
+    depthWrite: false
+  });
+  const dustPoints = new THREE.Points(dustGeo, dustMat);
+  group.add(dustPoints);
+
   // Batch all Sandbag instances into a single InstancedMesh (2GB VRAM optimal)
   if (sandbagInstances.length > 0) {
     const bagGeo = new THREE.BoxGeometry(0.76, 0.34, 0.52);
@@ -970,6 +1311,8 @@ export function createArenaEnvironment() {
     colliders,
     coverPoints,
     radarDishes,
+    waterMaterial: waterShaderMat,
+    dustPoints,
     terrainTrimesh: { vertices: trimeshVertices, indices: trimeshIndices }
   };
 }

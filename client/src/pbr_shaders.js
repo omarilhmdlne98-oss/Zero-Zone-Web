@@ -101,6 +101,46 @@ export const BATTLEFIELD_PBR_PRESETS = {
     "rim_strength": 0.24,
     "ao_strength": 0.86,
     "emissive_hex": "#e2c893"
+  },
+  "suez_water": {
+    "id": "suez_water",
+    "name": "Suez Canal Flowing Water",
+    "base_color_hex": "#1d6370",
+    "roughness": 0.14,
+    "metallic": 0.25,
+    "rim_strength": 0.42,
+    "ao_strength": 0.88,
+    "emissive_hex": "#7dd3fc"
+  },
+  "sinai_limestone": {
+    "id": "sinai_limestone",
+    "name": "Weathered Sinai Limestone Rock",
+    "base_color_hex": "#a88f6c",
+    "roughness": 0.88,
+    "metallic": 0.04,
+    "rim_strength": 0.16,
+    "ao_strength": 0.94,
+    "emissive_hex": "#e8cfa4"
+  },
+  "oasis_palm_foliage": {
+    "id": "oasis_palm_foliage",
+    "name": "West Bank Oasis Date Palm Foliage",
+    "base_color_hex": "#4c6b3c",
+    "roughness": 0.78,
+    "metallic": 0.02,
+    "rim_strength": 0.18,
+    "ao_strength": 0.90,
+    "emissive_hex": "#a3e635"
+  },
+  "desert_camo_net": {
+    "id": "desert_camo_net",
+    "name": "Bar-Lev Desert Camouflage Netting",
+    "base_color_hex": "#9b8459",
+    "roughness": 0.90,
+    "metallic": 0.02,
+    "rim_strength": 0.12,
+    "ao_strength": 0.92,
+    "emissive_hex": "#d6be92"
   }
 };
 
@@ -168,8 +208,8 @@ export const TACTICAL_STRUCTURE_SPECS = [
 ];
 
 /**
- * Enhances a Three.js MeshStandardMaterial with Fresnel tactical rim lighting
- * and micro-contrast tuned for 2GB VRAM GPUs (mirrors battlefield_pbr_frag.glsl).
+ * Enhances a Three.js MeshStandardMaterial with Fresnel tactical rim lighting,
+ * micro-grain desert quartz sparkle, and slope-aware contrast tuned for 2GB VRAM GPUs.
  */
 export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') {
   const preset = BATTLEFIELD_PBR_PRESETS[presetId] || BATTLEFIELD_PBR_PRESETS.brushed_steel;
@@ -179,9 +219,10 @@ export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') 
 
   const rimColor = new THREE.Color(preset.emissive_hex !== '#000000' ? preset.emissive_hex : '#38bdf8');
   const rimStrength = preset.rim_strength;
+  const isSand = presetId === 'sinai_sand' || presetId === 'berm_earth';
 
   try {
-    material.customProgramCacheKey = () => 'zero_zone_pbr_fresnel_v2';
+    material.customProgramCacheKey = () => (isSand ? 'zero_zone_pbr_sinai_sand_v3' : 'zero_zone_pbr_fresnel_v3');
     material.onBeforeCompile = (shader) => {
       try {
         if (
@@ -192,20 +233,27 @@ export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') 
         }
         shader.uniforms.uRimColor = { value: rimColor };
         shader.uniforms.uRimStrength = { value: rimStrength };
+        shader.uniforms.uIsSand = { value: isSand ? 1.0 : 0.0 };
         shader.fragmentShader = shader.fragmentShader
           .replace(
             '#include <common>',
             `#include <common>
              uniform vec3 uRimColor;
-             uniform float uRimStrength;`
+             uniform float uRimStrength;
+             uniform float uIsSand;`
           )
           .replace(
             '#include <dithering_fragment>',
             `#if !defined(FLAT_SHADED)
              vec3 zzN = length(vNormal) > 0.0001 ? normalize(vNormal) : vec3(0.0, 1.0, 0.0);
              vec3 zzV = length(vViewPosition) > 0.0001 ? normalize(vViewPosition) : vec3(0.0, 0.0, 1.0);
-             float zzFresnel = pow(max(0.0001, 1.0 - clamp(dot(zzN, zzV), 0.0, 1.0)), 3.2);
+             float zzFresnel = pow(max(0.0001, 1.0 - clamp(dot(zzN, zzV), 0.0, 1.0)), 3.0);
              gl_FragColor.rgb += uRimColor * zzFresnel * uRimStrength * 0.42;
+             if (uIsSand > 0.5) {
+               float zzGlint = fract(sin(dot(floor(gl_FragCoord.xy * 0.65), vec2(12.9898, 78.233))) * 43758.5453);
+               float zzSparkle = smoothstep(0.965, 0.999, zzGlint) * zzFresnel;
+               gl_FragColor.rgb += vec3(1.0, 0.93, 0.76) * zzSparkle * 0.24;
+             }
              #endif
              #include <dithering_fragment>`
           );
@@ -219,3 +267,4 @@ export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') 
   }
   return material;
 }
+
