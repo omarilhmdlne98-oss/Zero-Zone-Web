@@ -92,6 +92,8 @@ const SKY_FRAG = `
     col = mix(col, dustHorizon, horizonDust * 0.45);
 
     gl_FragColor = vec4(col, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -160,6 +162,8 @@ const SUEZ_WATER_FRAG = `
     waterCol = mix(waterCol, vec3(0.847, 0.706, 0.502), clamp(fogFactor, 0.0, 1.0));
 
     gl_FragColor = vec4(waterCol, 0.91);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -179,6 +183,25 @@ function makeCanvasTexture(key, size, drawFn, repeatX = 1, repeatY = 1, isLinear
   tex.repeat.set(repeatX, repeatY);
   tex.colorSpace = isLinear ? THREE.NoColorSpace : THREE.SRGBColorSpace;
   _texCache[key] = tex;
+  return tex;
+}
+
+export function getSmokePuffTexture() {
+  if (_texCache.smoke_puff) return _texCache.smoke_puff;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(32, 32, 4, 32, 32, 30);
+  grad.addColorStop(0.0, 'rgba(255,255,255,0.92)');
+  grad.addColorStop(0.42, 'rgba(220,214,205,0.52)');
+  grad.addColorStop(0.75, 'rgba(160,152,142,0.16)');
+  grad.addColorStop(1.0, 'rgba(120,115,108,0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  _texCache.smoke_puff = tex;
   return tex;
 }
 
@@ -1445,11 +1468,14 @@ export function createArenaEnvironment() {
     });
 
     smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+    const puffTex = getSmokePuffTexture();
     const smokeMat = new THREE.PointsMaterial({
       color: 0x3b352e,
-      size: 2.1,
+      map: puffTex,
+      size: 5.4,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.46,
+      alphaTest: 0.02,
       depthWrite: false
     });
     smokePlumes = new THREE.Points(smokeGeo, smokeMat);
@@ -1469,9 +1495,11 @@ export function createArenaEnvironment() {
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
   const dustMat = new THREE.PointsMaterial({
     color: 0xf4dca8,
-    size: 0.24,
+    map: getSmokePuffTexture(),
+    size: 0.42,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.44,
+    alphaTest: 0.02,
     depthWrite: false
   });
   const dustPoints = new THREE.Points(dustGeo, dustMat);
@@ -1491,6 +1519,15 @@ export function createArenaEnvironment() {
     bagInst.castShadow = false;
     bagInst.receiveShadow = true;
     group.add(bagInst);
+  }
+
+  // Performance hardening (threejs-performance): freeze transforms on static meshes & instanced batches
+  const dynamicSet = new Set([...radarDishes, dustPoints, smokePlumes].filter(Boolean));
+  for (const child of group.children) {
+    if (!dynamicSet.has(child)) {
+      child.updateMatrix();
+      child.matrixAutoUpdate = false;
+    }
   }
 
   return {

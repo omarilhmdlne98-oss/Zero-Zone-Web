@@ -16,6 +16,8 @@ export class DualControls {
     this.breachHeld = false;
     this.weaponSwitch = null;
     this.classSwitch = null;
+    this.uavPressed = false;
+    this.artilleryPressed = false;
     this.toggleMenuPressed = false;
     this.moveVec = { x: 0, y: 0 };
     this.isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -43,6 +45,8 @@ export class DualControls {
       if (e.code === 'Digit1') { this.weaponSwitch = 0; this._touchWeaponIdx = 0; }
       if (e.code === 'Digit2') { this.weaponSwitch = 1; this._touchWeaponIdx = 1; }
       if (e.code === 'Digit3') { this.weaponSwitch = 2; this._touchWeaponIdx = 2; }
+      if (e.code === 'Digit4' && !e.repeat) { this.uavPressed = true; }
+      if (e.code === 'Digit5' && !e.repeat) { this.artilleryPressed = true; }
       if (e.code === 'F1') { e.preventDefault(); this.classSwitch = 'vanguard'; }
       if (e.code === 'F2') { e.preventDefault(); this.classSwitch = 'spectre'; }
       if (e.code === 'F3') { e.preventDefault(); this.classSwitch = 'juggernaut'; }
@@ -212,6 +216,8 @@ export class DualControls {
       breach: this.breachHeld,
       weaponSwitch: this.weaponSwitch,
       classSwitch: this.classSwitch,
+      uav: this.uavPressed,
+      artillery: this.artilleryPressed,
       toggleMenu: this.toggleMenuPressed
     };
     this.firePressed = false;
@@ -222,6 +228,8 @@ export class DualControls {
     this.inspectPressed = false;
     this.weaponSwitch = null;
     this.classSwitch = null;
+    this.uavPressed = false;
+    this.artilleryPressed = false;
     this.toggleMenuPressed = false;
     return out;
   }

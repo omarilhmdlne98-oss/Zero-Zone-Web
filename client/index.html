@@ -166,6 +166,40 @@
       border-color: #38e2ff; color: #eef2f6; background: rgba(20, 42, 62, 0.92);
       box-shadow: 0 0 12px rgba(56, 226, 255, 0.28); font-weight: 700;
     }
+    .ks-slot {
+      background: rgba(11, 16, 24, 0.82); border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 8px; padding: 6px 10px; font-size: 0.72rem; color: #cbd5e1;
+      transition: all 0.14s ease;
+    }
+    .ks-slot.ready {
+      border-color: #fbbf24; color: #fef3c7; background: rgba(56, 38, 12, 0.88);
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.32); font-weight: 700;
+    }
+    .ks-slot.active-uav {
+      border-color: #38e2ff; color: #e0f7ff; background: rgba(12, 48, 66, 0.92);
+      box-shadow: 0 0 14px rgba(56, 226, 255, 0.45); font-weight: 700;
+    }
+    #minimap-wrap {
+      position: absolute; top: 82px; left: 12px; padding: 6px;
+      background: rgba(9, 14, 21, 0.82); border: 1px solid rgba(56, 226, 255, 0.35);
+      border-radius: 10px; backdrop-filter: blur(4px); box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    #minimap-canvas {
+      width: 142px; height: 142px; border-radius: 7px; display: block;
+      background: #141a21; border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    #minimap-status {
+      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.65rem;
+      font-weight: 700; letter-spacing: 0.7px; color: #7dd3fc;
+    }
+    #tactical-toast {
+      position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
+      background: rgba(12, 24, 38, 0.9); border: 1px solid rgba(251, 191, 36, 0.6);
+      color: #fef3c7; border-radius: 999px; padding: 6px 16px; font-size: 0.76rem;
+      font-weight: 800; letter-spacing: 0.8px; opacity: 0; transition: opacity 0.2s ease;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    }
     .hint { font-size: 0.72rem; color: #9fb0c4; }
 
     /* Mobile Touch Controls */
@@ -226,6 +260,11 @@
       </div>
     </div>
 
+    <div id="minimap-wrap">
+      <canvas id="minimap-canvas" width="142" height="142"></canvas>
+      <div id="minimap-status">SINAI RADAR // SUEZ SECTOR</div>
+    </div>
+    <div id="tactical-toast"></div>
     <div id="kill-feed"></div>
 
     <div id="crosshair">
@@ -251,7 +290,7 @@
       <div class="bar-bg"><div class="bar-fill stam-fill" id="hud-stam-bar" style="width:100%"></div></div>
       <div style="font-size:0.74rem;" id="hud-cd-text">Ability [G]: Ready</div>
       <div class="bar-bg"><div class="bar-fill cd-fill" id="hud-cd-bar" style="width:100%"></div></div>
-      <div class="hint">[Q/E] Lean &bull; [C] Crouch &bull; [I] Inspect &bull; [F] Vault</div>
+      <div class="hint">[Q/E] Lean &bull; [C] Crouch &bull; [I] Inspect &bull; [4] UAV &bull; [5] Arty</div>
     </div>
 
     <div class="hud-bottom-right">
@@ -259,6 +298,10 @@
         <div class="ammo-big" id="hud-ammo-text">30 / 150</div>
         <div class="ammo-sub" id="hud-wpn-name">VX-47 Assault Rifle</div>
         <div class="bar-bg" style="margin-bottom:0;"><div class="bar-fill shd-fill" id="hud-reload-bar" style="width:100%"></div></div>
+      </div>
+      <div class="hud-weapons">
+        <div class="ks-slot ready" id="ks-uav">[4] UAV Ready</div>
+        <div class="ks-slot ready" id="ks-arty">[5] Arty Ready</div>
       </div>
       <div class="hud-weapons">
         <div class="wpn-slot active" id="wpn-0">[1] VX-47 Rifle</div>

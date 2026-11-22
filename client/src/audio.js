@@ -153,6 +153,19 @@ class SoundFX {
     this._noise(0.55, 'lowpass', 520, 0.34, 0.0, 0.65);
     this._noise(0.32, 'bandpass', 1450, 0.14, 0.06, 1.1);
   }
+
+  uavPulse() {
+    // Tactical Sinai recon radar sweep ping + double confirm chirp
+    this._tone(920, 1480, 0.18, 'sine', 0.11, 0.0);
+    this._tone(1480, 1920, 0.24, 'sine', 0.08, 0.16);
+    this._tone(680, 680, 0.07, 'triangle', 0.05, 0.36);
+  }
+
+  artilleryWhistle() {
+    // Incoming 155mm shell descending whistle prior to detonation
+    this._tone(1180, 320, 0.52, 'sine', 0.09, 0.0);
+    this._noise(0.45, 'bandpass', 780, 0.06, 0.04, 2.2);
+  }
 }
 
 export const sfx = new SoundFX();

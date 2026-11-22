@@ -231,6 +231,7 @@ let inspectPhase = 0;
 
 let recoilKickBack = 0;
 let recoilKickPitch = 0;
+let cameraTrauma = 0;
 let muzzleFlashTimer = 0;
 let hitmarkerTimer = 0;
 let damageIndicatorTimer = 0;
@@ -241,6 +242,27 @@ let bobPhase = 0;
 let currentLean = 0;
 let currentEyeHeight = 1.68;
 let shieldRegenDelay = 0;
+
+// Tactical Killstreaks ([4] UAV Recon Pulse, [5] 155mm Sinai Artillery Strike)
+let uavActiveTimer = 0;
+let uavCooldown = 0;
+let uavPulsePhase = 0;
+let artilleryCooldown = 0;
+let tacticalToastTimer = 0;
+const activeArtilleryStrikes = [];
+const viewmodelCache = new Map();
+
+function addCameraTrauma(amount) {
+  cameraTrauma = Math.min(1.0, cameraTrauma + amount);
+}
+
+function showTacticalToast(msg, duration = 2.6) {
+  const el = document.getElementById('tactical-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.opacity = '1';
+  tacticalToastTimer = duration;
+}
 
 let localState = {
   kit: 'vanguard',
@@ -262,14 +284,20 @@ let localState = {
   breachProgress: 0
 };
 
-// --- Viewmodel Management ---
+// --- Viewmodel Management (Cached per weaponId -> zero GPU buffer leaks on weapon switch) ---
 function rebuildViewmodel(weaponId) {
   if (viewmodel) {
-    camera.remove(viewmodel);
+    viewmodel.visible = false;
   }
-  viewmodel = createFirstPersonViewmodel(weaponId);
-  viewmodel.position.set(0.24, -0.22, -0.44);
-  camera.add(viewmodel);
+  let cached = viewmodelCache.get(weaponId);
+  if (!cached) {
+    cached = createFirstPersonViewmodel(weaponId);
+    cached.position.set(0.24, -0.22, -0.44);
+    camera.add(cached);
+    viewmodelCache.set(weaponId, cached);
+  }
+  viewmodel = cached;
+  viewmodel.visible = true;
 }
 
 function selectWeapon(idx) {
@@ -293,14 +321,28 @@ function startReload() {
   sfx.reload();
 }
 
+// --- Zero-Alloc Shared Geometries & Materials (2GB VRAM Hardening from threejs-performance) ---
+const sharedSparkGeo = new THREE.BoxGeometry(0.045, 0.045, 0.045);
+const sharedSparkMetalMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+const sharedSparkDustMat = new THREE.MeshBasicMaterial({ color: 0x9ca3af });
+const sharedCasingGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.036, 6);
+const sharedCasingMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.25 });
+const sharedArtyRingGeo = new THREE.RingGeometry(4.2, 4.9, 28);
+sharedArtyRingGeo.rotateX(-Math.PI / 2);
+const sharedArtyRingMat = new THREE.MeshBasicMaterial({
+  color: 0xef4444,
+  transparent: true,
+  opacity: 0.72,
+  side: THREE.DoubleSide,
+  depthWrite: false
+});
+
 // --- Visual FX: Impact Sparks, Concrete Dust, Shell Casings, Hitmarker, Kill Feed ---
 function spawnImpactFX(point, normal, isMetallic = false) {
   const count = isMetallic ? 7 : 5;
-  const color = isMetallic ? 0xfbbf24 : 0x9ca3af;
-  const geo = new THREE.BoxGeometry(0.045, 0.045, 0.045);
-  const mat = new THREE.MeshBasicMaterial({ color });
+  const mat = isMetallic ? sharedSparkMetalMat : sharedSparkDustMat;
   for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(geo, mat);
+    const m = new THREE.Mesh(sharedSparkGeo, mat);
     m.castShadow = false;
     m.receiveShadow = false;
     m.position.copy(point);
@@ -315,9 +357,7 @@ function spawnImpactFX(point, normal, isMetallic = false) {
 
 function spawnShellCasing() {
   if (!viewmodel) return;
-  const geo = new THREE.CylinderGeometry(0.008, 0.008, 0.036, 6);
-  const mat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.25 });
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(sharedCasingGeo, sharedCasingMat);
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   const worldPos = new THREE.Vector3(0.14, -0.05, -0.32).applyMatrix4(camera.matrixWorld);
@@ -405,21 +445,25 @@ function triggerDirectionalDamage(sourcePos) {
 
 const sharedFireGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
 const sharedSmokeGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
-const firePalette = [0xff5500, 0xffaa00, 0xef4444];
+const sharedFireMats = [
+  new THREE.MeshBasicMaterial({ color: 0xff5500 }),
+  new THREE.MeshBasicMaterial({ color: 0xffaa00 }),
+  new THREE.MeshBasicMaterial({ color: 0xef4444 })
+];
 const smokeMat = new THREE.MeshBasicMaterial({ color: 0x272b33, transparent: true, opacity: 0.7 });
 
-function spawnExplosionFX(center) {
-  // Lightweight fireball cubes (castShadow = false)
+function spawnExplosionFX(center, scale = 1.0) {
+  // Lightweight fireball cubes using shared zero-alloc materials (castShadow = false)
   for (let i = 0; i < 14; i++) {
-    const mat = new THREE.MeshBasicMaterial({ color: firePalette[i % firePalette.length] });
-    const m = new THREE.Mesh(sharedFireGeo, mat);
+    const m = new THREE.Mesh(sharedFireGeo, sharedFireMats[i % sharedFireMats.length]);
     m.castShadow = false;
     m.receiveShadow = false;
-    m.position.copy(center).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.5, (Math.random() - 0.5) * 0.6));
+    m.scale.setScalar(scale);
+    m.position.copy(center).add(new THREE.Vector3((Math.random() - 0.5) * 0.6 * scale, 0.5 + Math.random() * 0.5, (Math.random() - 0.5) * 0.6 * scale));
     const vel = new THREE.Vector3(
-      (Math.random() - 0.5) * 11,
-      3.5 + Math.random() * 7.5,
-      (Math.random() - 0.5) * 11
+      (Math.random() - 0.5) * 11 * scale,
+      (3.5 + Math.random() * 7.5) * scale,
+      (Math.random() - 0.5) * 11 * scale
     );
     scene.add(m);
     particles.push({ mesh: m, vel, life: 0.35 + Math.random() * 0.28, gravity: 11 });
@@ -429,11 +473,12 @@ function spawnExplosionFX(center) {
     const m = new THREE.Mesh(sharedSmokeGeo, smokeMat);
     m.castShadow = false;
     m.receiveShadow = false;
-    m.position.copy(center).add(new THREE.Vector3((Math.random() - 0.5) * 1.1, 0.7 + Math.random() * 0.6, (Math.random() - 0.5) * 1.1));
+    m.scale.setScalar(scale);
+    m.position.copy(center).add(new THREE.Vector3((Math.random() - 0.5) * 1.1 * scale, 0.7 + Math.random() * 0.6, (Math.random() - 0.5) * 1.1 * scale));
     const vel = new THREE.Vector3(
-      (Math.random() - 0.5) * 3.2,
-      2.6 + Math.random() * 2.4,
-      (Math.random() - 0.5) * 3.2
+      (Math.random() - 0.5) * 3.2 * scale,
+      (2.6 + Math.random() * 2.4) * scale,
+      (Math.random() - 0.5) * 3.2 * scale
     );
     scene.add(m);
     particles.push({ mesh: m, vel, life: 0.75 + Math.random() * 0.45, gravity: -1.4 });
@@ -547,7 +592,272 @@ function updateHUD() {
     vig.style.opacity = `${Math.min(1, lowRatio * 0.95)}`;
   }
 
+  // Tactical Killstreak Slots ([4] UAV Recon Pulse, [5] 155mm Artillery Strike)
+  const uavEl = document.getElementById('ks-uav');
+  if (uavEl) {
+    uavEl.classList.toggle('active-uav', uavActiveTimer > 0);
+    uavEl.classList.toggle('ready', uavActiveTimer <= 0 && uavCooldown <= 0);
+    uavEl.textContent = uavActiveTimer > 0
+      ? `[4] UAV ${uavActiveTimer.toFixed(0)}s`
+      : (uavCooldown > 0 ? `[4] UAV (${uavCooldown.toFixed(0)}s)` : '[4] UAV Ready');
+  }
+  const artyEl = document.getElementById('ks-arty');
+  if (artyEl) {
+    artyEl.classList.toggle('ready', artilleryCooldown <= 0);
+    artyEl.textContent = artilleryCooldown > 0
+      ? `[5] Arty (${artilleryCooldown.toFixed(0)}s)`
+      : '[5] Arty Ready';
+  }
+  const mmStatus = document.getElementById('minimap-status');
+  if (mmStatus) {
+    mmStatus.textContent = uavActiveTimer > 0
+      ? `UAV RECON ACTIVE // ${uavActiveTimer.toFixed(0)}s`
+      : 'SINAI RADAR // SUEZ SECTOR';
+    mmStatus.style.color = uavActiveTimer > 0 ? '#38e2ff' : '#7dd3fc';
+  }
+
   renderKillFeed();
+}
+
+// --- [4] UAV Recon Pulse & [5] 155mm Sinai Artillery Barrage ---
+function triggerUavRecon() {
+  if (!localState.alive || uavCooldown > 0) return;
+  uavActiveTimer = 12.0;
+  uavCooldown = 22.0;
+  uavPulsePhase = 0;
+  sfx.uavPulse();
+  showTacticalToast('UAV RECON ONLINE — ALL HOSTILES REVEALED (12s)');
+}
+
+function triggerArtilleryStrike() {
+  if (!localState.alive || artilleryCooldown > 0 || !playerBody) return;
+  artilleryCooldown = 28.0;
+
+  const aimDir = new THREE.Vector3();
+  camera.getWorldDirection(aimDir);
+  const artyRay = new THREE.Raycaster(camera.position, aimDir, 2.0, 125.0);
+  const hits = artyRay.intersectObject(arenaEnv.group, true);
+
+  let targetX = camera.position.x + aimDir.x * 34.0;
+  let targetZ = camera.position.z + aimDir.z * 34.0;
+  if (hits.length > 0) {
+    targetX = hits[0].point.x;
+    targetZ = hits[0].point.z;
+  }
+  const bound = UPPER_COMBAT_NETWORK.combat_zone_radius_m;
+  targetX = THREE.MathUtils.clamp(targetX, -bound, bound);
+  targetZ = THREE.MathUtils.clamp(targetZ, -bound, bound);
+  const targetY = getSinaiTerrainHeight(targetX, targetZ);
+
+  const ringMesh = new THREE.Mesh(sharedArtyRingGeo, sharedArtyRingMat);
+  ringMesh.position.set(targetX, targetY + 0.16, targetZ);
+  scene.add(ringMesh);
+
+  activeArtilleryStrikes.push({
+    x: targetX,
+    y: targetY,
+    z: targetZ,
+    ringMesh,
+    shellsRemaining: 5,
+    nextShellDelay: 0.75,
+    life: 4.5
+  });
+
+  sfx.artilleryWhistle();
+  showTacticalToast('155mm SINAI ARTILLERY BARRAGE INBOUND — CLEAR IMPACT ZONE!', 3.0);
+}
+
+function updateArtilleryStrikes(dt) {
+  for (let i = activeArtilleryStrikes.length - 1; i >= 0; i--) {
+    const st = activeArtilleryStrikes[i];
+    st.life -= dt;
+    if (st.ringMesh) {
+      const pulse = 1.0 + Math.sin(clock.elapsedTime * 11.0) * 0.08;
+      st.ringMesh.scale.set(pulse, 1, pulse);
+    }
+    if (st.shellsRemaining > 0) {
+      st.nextShellDelay -= dt;
+      if (st.nextShellDelay <= 0) {
+        st.shellsRemaining -= 1;
+        st.nextShellDelay = 0.42;
+
+        const offX = (Math.random() - 0.5) * 8.0;
+        const offZ = (Math.random() - 0.5) * 8.0;
+        const ix = st.x + offX;
+        const iz = st.z + offZ;
+        const iy = getSinaiTerrainHeight(ix, iz);
+        const impactPos = new THREE.Vector3(ix, iy + 0.35, iz);
+
+        sfx.explosion();
+        if (st.shellsRemaining > 0) sfx.artilleryWhistle();
+        spawnExplosionFX(impactPos, 1.35);
+        alertBotsToGunshot(impactPos);
+
+        // Squared-trauma camera shake scaled by distance from impact
+        const camDist = camera.position.distanceTo(impactPos);
+        if (camDist < 75) {
+          addCameraTrauma(Math.max(0.14, (1.0 - camDist / 75.0) * 0.65));
+        }
+
+        const blastR = 8.5;
+        for (const bot of localBots) {
+          if (!bot.alive) continue;
+          const d = bot.mesh.position.distanceTo(impactPos);
+          if (d <= blastR) {
+            const falloff = 1.0 - (d / blastR) * 0.65;
+            applyDamageToBot(bot, 115 * falloff, 'torso', 'You', '155mm Artillery');
+          }
+        }
+        for (const cr of crates.values()) {
+          if (cr.mesh.visible && cr.mesh.position.distanceTo(impactPos) <= blastR) {
+            cr.hp = 0;
+            cr.mesh.visible = false;
+            cr.collider?.setEnabled(false);
+            sfx.crateBreak();
+          }
+        }
+        for (const b of barrels.values()) {
+          if (!b.exploded && Math.hypot(b.def.x - ix, b.def.z - iz) <= blastR) {
+            detonateBarrel(b, 'You');
+          }
+        }
+      }
+    }
+    if (st.life <= 0) {
+      if (st.ringMesh) scene.remove(st.ringMesh);
+      activeArtilleryStrikes.splice(i, 1);
+    }
+  }
+}
+
+// --- Lightweight 2D Canvas Tactical Minimap Radar (Zero WebGL overhead) ---
+const minimapCanvas = document.getElementById('minimap-canvas');
+const minimapCtx = minimapCanvas ? minimapCanvas.getContext('2d') : null;
+
+function renderTacticalMinimap(pPos) {
+  if (!minimapCtx || !pPos) return;
+  const ctx = minimapCtx;
+  const w = minimapCanvas.width;
+  const h = minimapCanvas.height;
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+  const rangeM = 74.0;
+  const scale = (w * 0.5) / rangeM;
+
+  const toMapX = (wx) => cx + (wx - pPos.x) * scale;
+  const toMapY = (wz) => cy + (wz - pPos.z) * scale;
+
+  // Desert sand radar background
+  ctx.fillStyle = '#1b1812';
+  ctx.fillRect(0, 0, w, h);
+
+  // Subtle tactical grid rings
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, w * 0.24, 0, Math.PI * 2);
+  ctx.arc(cx, cy, w * 0.44, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Suez Canal water band (z in [-8, 8])
+  const canalTop = toMapY(-8.0);
+  const canalBot = toMapY(8.0);
+  ctx.fillStyle = 'rgba(29, 99, 112, 0.62)';
+  ctx.fillRect(0, canalTop, w, canalBot - canalTop);
+
+  // 3 Pontoon Bridges (x = -28, 0, +28)
+  ctx.fillStyle = '#9aa389';
+  for (const bx of [-28, 0, 28]) {
+    const mx = toMapX(bx);
+    ctx.fillRect(mx - 2.5, canalTop - 1, 5, canalBot - canalTop + 2);
+  }
+
+  // East Bank Sand Berm Rampart line (z = -22)
+  const bermY = toMapY(-22.0);
+  ctx.fillStyle = '#c49658';
+  ctx.fillRect(toMapX(-58), bermY - 2, 116 * scale, 4);
+
+  // Active Artillery Strike Danger Circles
+  for (const st of activeArtilleryStrikes) {
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.24)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(toMapX(st.x), toMapY(st.z), 8.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Central Command Vault Objective (amber diamond)
+  const vx = toMapX(vault.position.x);
+  const vy = toMapY(vault.position.z);
+  ctx.fillStyle = '#f59e0b';
+  ctx.beginPath();
+  ctx.moveTo(vx, vy - 4.5);
+  ctx.lineTo(vx + 4.5, vy);
+  ctx.lineTo(vx, vy + 4.5);
+  ctx.lineTo(vx - 4.5, vy);
+  ctx.closePath();
+  ctx.fill();
+
+  // Active Explosive Fuel Barrels (tiny orange squares)
+  ctx.fillStyle = 'rgba(249, 115, 22, 0.78)';
+  for (const b of barrels.values()) {
+    if (b.exploded) continue;
+    ctx.fillRect(toMapX(b.def.x) - 1.5, toMapY(b.def.z) - 1.5, 3, 3);
+  }
+
+  // Expanding UAV Recon Sweep Ring
+  if (uavActiveTimer > 0) {
+    const sweepR = ((uavPulsePhase % 1.0) * w * 0.56);
+    ctx.strokeStyle = `rgba(56, 226, 255, ${(1.0 - (uavPulsePhase % 1.0)) * 0.85})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, sweepR, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Enemy AI Bot Blips (visible during [4] UAV Recon OR within 34m close proximity / firing)
+  for (const bot of localBots) {
+    if (!bot.alive) continue;
+    const dist = Math.hypot(bot.mesh.position.x - pPos.x, bot.mesh.position.z - pPos.z);
+    if (uavActiveTimer > 0 || dist < 34.0 || bot.state === 'ENGAGE') {
+      const bx = THREE.MathUtils.clamp(toMapX(bot.mesh.position.x), 5, w - 5);
+      const by = THREE.MathUtils.clamp(toMapY(bot.mesh.position.z), 5, h - 5);
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(bx, by, uavActiveTimer > 0 ? 3.5 : 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Player Vision Cone & Directional Arrow (Center)
+  const lookAngle = -controls.yaw - Math.PI * 0.5;
+  ctx.fillStyle = 'rgba(56, 226, 255, 0.22)';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, 24, lookAngle - 0.52, lookAngle + 0.52);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-controls.yaw);
+  ctx.fillStyle = '#38e2ff';
+  ctx.beginPath();
+  ctx.moveTo(0, -5.5);
+  ctx.lineTo(4.2, 4.5);
+  ctx.lineTo(0, 2.2);
+  ctx.lineTo(-4.2, 4.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // North Compass Marker
+  ctx.fillStyle = '#e2e8f0';
+  ctx.font = 'bold 9px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', cx, 10);
 }
 
 // --- Remote Multiplayer Operators ---
@@ -746,6 +1056,8 @@ function applyDamageToBot(bot, rawDmg, hitZone, attackerName, weaponName) {
     bot.respawnTimer = 4.0;
     if (attackerName === 'You') {
       localKills += 1;
+      uavCooldown = Math.max(0, uavCooldown - 6.0);
+      artilleryCooldown = Math.max(0, artilleryCooldown - 6.0);
       updateLocalHudBanner();
     }
     pushKillFeed(attackerName, bot.name, weaponName, isHeadshot);
@@ -765,6 +1077,10 @@ function detonateBarrel(barrel, attackerName = 'You') {
   sfx.explosion();
   spawnExplosionFX(center);
   alertBotsToGunshot(center);
+  const camDist = camera.position.distanceTo(center);
+  if (camDist < 42) {
+    addCameraTrauma(Math.max(0.12, (1.0 - camDist / 42.0) * 0.55));
+  }
 
   const blastRadius = 6.5;
   const maxSplashDmg = 120;
@@ -1386,7 +1702,23 @@ function animate() {
       inspectPhase = 0;
       sfx.radioCue();
     }
-    if (fireCooldown > 0) fireCooldown = Math.max(0, fireCooldown - dt);
+    if (act.uav) triggerUavRecon();
+    if (act.artillery) triggerArtilleryStrike();
+
+    if (uavActiveTimer > 0) {
+      uavActiveTimer = Math.max(0, uavActiveTimer - dt);
+      uavPulsePhase += dt * 0.68;
+    }
+    if (uavCooldown > 0) uavCooldown = Math.max(0, uavCooldown - dt);
+    if (artilleryCooldown > 0) artilleryCooldown = Math.max(0, artilleryCooldown - dt);
+    if (tacticalToastTimer > 0) {
+      tacticalToastTimer -= dt;
+      if (tacticalToastTimer <= 0) {
+        const toastEl = document.getElementById('tactical-toast');
+        if (toastEl) toastEl.style.opacity = '0';
+      }
+    }
+    if (fireCooldown > 0) fireCooldown -= dt;
 
     // Reload Timer
     if (isReloading) {
@@ -1511,7 +1843,7 @@ function animate() {
       }
     }
 
-    // First-Person Eye Camera with Crouch, Lean [Q/E], Recoil & ADS FOV
+    // First-Person Eye Camera with Crouch, Lean [Q/E], Recoil, Squared-Trauma Shake & ADS FOV
     const targetEye = localState.crouching ? 0.32 : 0.78;
     currentEyeHeight = THREE.MathUtils.lerp(currentEyeHeight, targetEye, Math.min(1, dt * 12));
     currentLean = THREE.MathUtils.lerp(currentLean, move.lean, Math.min(1, dt * 12));
@@ -1521,18 +1853,23 @@ function animate() {
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 14));
     camera.updateProjectionMatrix();
 
-    // Recoil recovery
+    // Recoil & Trauma Shake recovery (game-feel: shake = trauma^2 visual offset only)
     recoilKickBack = THREE.MathUtils.lerp(recoilKickBack, 0, Math.min(1, dt * 14));
     recoilKickPitch = THREE.MathUtils.lerp(recoilKickPitch, 0, Math.min(1, dt * 12));
+    cameraTrauma = Math.max(0, cameraTrauma - dt * 1.45);
+    const shakeMag = cameraTrauma * cameraTrauma;
+    const shakePitch = shakeMag * Math.sin(clock.elapsedTime * 48.0) * 0.032;
+    const shakeYaw = shakeMag * Math.cos(clock.elapsedTime * 39.0) * 0.026;
+    const shakeRoll = shakeMag * Math.sin(clock.elapsedTime * 54.0) * 0.042;
 
     const leanOffset = right.clone().multiplyScalar(currentLean * 0.42);
     const bobY = grounded && horizSpeed > 0.8 ? Math.sin(bobPhase) * (localState.ads ? 0.01 : 0.035) : 0;
     camera.position.set(pNew.x + leanOffset.x, pNew.y + currentEyeHeight + bobY, pNew.z + leanOffset.z);
 
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = controls.yaw;
-    camera.rotation.x = THREE.MathUtils.clamp(controls.pitch + recoilKickPitch, -1.35, 1.35);
-    camera.rotation.z = -currentLean * 0.16;
+    camera.rotation.y = controls.yaw + shakeYaw;
+    camera.rotation.x = THREE.MathUtils.clamp(controls.pitch + recoilKickPitch + shakePitch, -1.35, 1.35);
+    camera.rotation.z = -currentLean * 0.16 + shakeRoll;
 
     // First-Person Viewmodel Sway, ADS Sight Alignment, Inspect Showcase, Recoil & Reload Animation
     if (localState.ads) isInspecting = false;
@@ -1582,7 +1919,7 @@ function animate() {
       }
     }
 
-    // Fire Weapon (supports Full-Auto Rifle & Semi-Auto Railgun/Shotgun)
+    // Fire Weapon (fps-shooter Pattern 1: frame-rate independent fire cooldown carry-over)
     const wantsFire = wpn.auto ? (act.fire || act.fireHeld) : act.fire;
     if (wantsFire && localState.alive && !isReloading && fireCooldown <= 0) {
       isInspecting = false;
@@ -1591,8 +1928,9 @@ function animate() {
         startReload();
       } else {
         ammo.mag -= 1;
-        fireCooldown = wpn.fireInterval;
+        fireCooldown = Math.max(0, fireCooldown + wpn.fireInterval);
         sfx.fire(wpn.id);
+        addCameraTrauma(wpn.id === 'railgun' ? 0.24 : (wpn.id === 'shotgun' ? 0.22 : 0.08));
 
         const recoilScale = localState.ads ? 0.62 : (localState.crouching ? 0.78 : 1.0);
         recoilKickBack = Math.min(0.14, recoilKickBack + wpn.recoilPitch * 1.8);
@@ -1773,6 +2111,8 @@ function animate() {
       }
     }
 
+    updateArtilleryStrikes(dt);
+    renderTacticalMinimap(pNew);
     updateHUD();
   }
 
