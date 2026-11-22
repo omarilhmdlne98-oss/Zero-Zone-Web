@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { applyBattlefieldPBRShader } from './pbr_shaders.js';
-import { UPPER_COMBAT_NETWORK, getSinaiTerrainHeight } from './bridge_network.js';
+import { SINAI_SHELL_CRATERS, UPPER_COMBAT_NETWORK, getSinaiTerrainHeight } from './bridge_network.js';
 
 const SPECTRE_CLOAK_VERT = `
   varying vec3 vNormal;
