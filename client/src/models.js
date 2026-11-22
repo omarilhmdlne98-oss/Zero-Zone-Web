@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { applyBattlefieldPBRShader } from './pbr_shaders.js';
-import { UPPER_COMBAT_NETWORK } from './bridge_network.js';
+import { UPPER_COMBAT_NETWORK, getSinaiTerrainHeight } from './bridge_network.js';
 
 const SPECTRE_CLOAK_VERT = `
   varying vec3 vNormal;
@@ -41,11 +41,11 @@ const SKY_FRAG = `
   varying vec3 vWorldPos;
   void main() {
     float h = normalize(vWorldPos).y;
-    vec3 zenith = vec3(0.106, 0.157, 0.220);
-    vec3 mid = vec3(0.185, 0.278, 0.388);
-    vec3 horizon = vec3(0.36, 0.31, 0.29);
-    vec3 col = mix(horizon, mid, smoothstep(-0.04, 0.24, h));
-    col = mix(col, zenith, smoothstep(0.20, 0.78, h));
+    vec3 zenith = vec3(0.32, 0.54, 0.76);
+    vec3 mid = vec3(0.68, 0.76, 0.84);
+    vec3 horizon = vec3(0.847, 0.706, 0.502);
+    vec3 col = mix(horizon, mid, smoothstep(0.0, 0.25, h));
+    col = mix(col, zenith, smoothstep(0.22, 0.82, h));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -584,7 +584,7 @@ export function animateOperatorRig(root, dt, moveSpeed = 0, isCrouching = false,
   }
 }
 
-// --- Tactical Multi-Tier Urban Industrial Arena Environment ---
+// --- 1973 Sinai Desert Open-World Terrain (400m x 400m) ---
 export function createSkyDome() {
   const mat = new THREE.ShaderMaterial({
     vertexShader: SKY_VERT,
@@ -592,11 +592,14 @@ export function createSkyDome() {
     side: THREE.BackSide,
     depthWrite: false
   });
-  return new THREE.Mesh(new THREE.SphereGeometry(95, 24, 16), mat);
+  return new THREE.Mesh(new THREE.SphereGeometry(320, 24, 16), mat);
 }
 
 export function createVaultStructure() {
   const group = new THREE.Group();
+  const baseH = getSinaiTerrainHeight(0, -14.5);
+  group.position.set(0, baseH, -14.5);
+
   const steelTex = getSteelTexture(2, 2);
   const cautionTex = getCautionTexture(4, 1);
 
@@ -608,23 +611,23 @@ export function createVaultStructure() {
   const ringMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 2.0 });
 
   const core = new THREE.Mesh(new THREE.BoxGeometry(3.8, 4.2, 3.8), armorMat);
-  core.position.y = 2.52;
+  core.position.y = 2.25;
   core.castShadow = true;
   core.receiveShadow = true;
 
-  const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.35, 4.4), trimMat);
-  basePlinth.position.y = 0.58;
+  const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.35, 4.6), trimMat);
+  basePlinth.position.y = 0.18;
   basePlinth.receiveShadow = true;
 
   const cap = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.38, 4.2), armorMat);
-  cap.position.y = 4.78;
+  cap.position.y = 4.52;
   cap.castShadow = true;
 
   const ringLow = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.11, 10, 28), ringMat);
   ringLow.rotation.x = Math.PI / 2;
-  ringLow.position.y = 1.65;
+  ringLow.position.y = 1.45;
   const ringHigh = ringLow.clone();
-  ringHigh.position.y = 3.55;
+  ringHigh.position.y = 3.35;
 
   group.add(core, basePlinth, cap, ringLow, ringHigh);
   group.userData.rings = [ringLow, ringHigh];
@@ -638,21 +641,22 @@ export function createArenaEnvironment() {
   const radarDishes = [];
   const stanchionPositions = [];
   const sandbagInstances = [];
+  const rockInstances = [];
 
   const sandMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getSandTexture(12, 5), color: 0xebd1a7 }),
+    new THREE.MeshStandardMaterial({
+      map: getSandTexture(32, 32),
+      color: 0xffffff,
+      vertexColors: true
+    }),
     'sinai_sand'
   );
   const bermMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getSandTexture(6, 2), color: 0xd1ac72 }),
+    new THREE.MeshStandardMaterial({ map: getSandTexture(8, 2), color: 0xd1ac72 }),
     'berm_earth'
   );
   const bunkerMat = applyBattlefieldPBRShader(
     new THREE.MeshStandardMaterial({ map: getConcreteTexture(4, 2), color: 0xc2b092 }),
-    'desert_concrete'
-  );
-  const wallMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getConcreteTexture(8, 2), color: 0xbaa686 }),
     'desert_concrete'
   );
   const pontoonMat = applyBattlefieldPBRShader(
@@ -667,6 +671,12 @@ export function createArenaEnvironment() {
     new THREE.MeshStandardMaterial({ map: getCatwalkGrateTexture(6, 2), color: 0x7a7465 }),
     'catwalk_grate'
   );
+  const rockMat = new THREE.MeshStandardMaterial({
+    map: getConcreteTexture(2, 2),
+    color: 0x9c825e,
+    roughness: 0.92,
+    metalness: 0.04
+  });
   const sandbagMat = new THREE.MeshStandardMaterial({ map: getSandbagTexture(2, 1), color: 0xcbb07f, roughness: 0.9, metalness: 0.04 });
   const cautionMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(4, 1), roughness: 0.55, metalness: 0.2 });
   const slitMat = new THREE.MeshBasicMaterial({ color: 0x151311 });
@@ -689,98 +699,111 @@ export function createArenaEnvironment() {
     return mesh;
   };
 
-  // --- 1. Procedural Desert Sand Terrain (West Bank z>4.5, East Bank z<-4.5) + Dune Ripples ---
-  const buildDesertBank = (zCenter, depth) => {
-    const geo = new THREE.PlaneGeometry(48, depth, 28, 12);
-    geo.rotateX(-Math.PI / 2);
-    const posAttr = geo.attributes.position;
-    for (let i = 0; i < posAttr.count; i++) {
-      const vx = posAttr.getX(i);
-      const vz = posAttr.getZ(i) + zCenter;
-      // Keep pontoon road corridors (x = +-9.5) and outer ramp lanes flat for clean collider match
-      const nearRoad = Math.min(Math.abs(vx + 9.5), Math.abs(vx - 9.5), Math.abs(vx + 19.5), Math.abs(vx - 19.5)) < 3.0;
-      const nearCanal = Math.abs(vz) < 6.8;
-      if (!nearRoad && !nearCanal) {
-        const dune = Math.sin(vx * 0.24) * Math.cos(vz * 0.28) * 0.14 + Math.sin(vx * 0.55 + vz * 0.35) * 0.04;
-        posAttr.setY(i, Math.max(-0.02, dune));
-      }
+  // --- 1. Continuous 400m x 400m Open-World Sinai Desert Heightfield (ZERO enclosing box walls!) ---
+  const terrainSize = UPPER_COMBAT_NETWORK.terrain_size_m;
+  const gridSegs = 112;
+  const terrainGeo = new THREE.PlaneGeometry(terrainSize, terrainSize, gridSegs, gridSegs);
+  terrainGeo.rotateX(-Math.PI / 2);
+
+  const posAttr = terrainGeo.attributes.position;
+  const colors = new Float32Array(posAttr.count * 3);
+  const trimeshVertices = new Float32Array(posAttr.count * 3);
+
+  for (let i = 0; i < posAttr.count; i++) {
+    const vx = posAttr.getX(i);
+    const vz = posAttr.getZ(i);
+    const vy = getSinaiTerrainHeight(vx, vz);
+    posAttr.setY(i, vy);
+
+    trimeshVertices[i * 3] = vx;
+    trimeshVertices[i * 3 + 1] = vy;
+    trimeshVertices[i * 3 + 2] = vz;
+
+    // Vertex color shading: wet dark canal sand -> warm golden desert dunes -> sun-bleached rocky ridges
+    let r = 0.92;
+    let g = 0.81;
+    let b = 0.63;
+    if (vy < -0.15) {
+      // Wet canal bank & bed
+      r = 0.56;
+      g = 0.48;
+      b = 0.36;
+    } else if (vy > 4.2) {
+      // Distant desert mountain ridge rock
+      const t = Math.min(1, (vy - 4.2) / 14.0);
+      r = 0.86 - t * 0.18;
+      g = 0.72 - t * 0.17;
+      b = 0.54 - t * 0.14;
+    } else {
+      // Subtle dune crest highlight
+      const crest = Math.min(1, vy / 3.8);
+      r = 0.88 + crest * 0.08;
+      g = 0.76 + crest * 0.08;
+      b = 0.58 + crest * 0.07;
     }
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, sandMat);
-    mesh.position.set(0, 0.01, zCenter);
-    mesh.castShadow = false;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  };
-  buildDesertBank(14.25, 19.5);
-  buildDesertBank(-14.25, 19.5);
+    colors[i * 3] = r;
+    colors[i * 3 + 1] = g;
+    colors[i * 3 + 2] = b;
+  }
 
-  // Physics bank & canal floor colliders
-  colliders.push({ x: 0, y: -0.5, z: 14.25, hx: 24, hy: 0.5, hz: 9.75, rx: 0, rz: 0 });
-  colliders.push({ x: 0, y: -0.5, z: -14.25, hx: 24, hy: 0.5, hz: 9.75, rx: 0, rz: 0 });
-  colliders.push({ x: 0, y: -1.02, z: 0, hx: 24, hy: 0.5, hz: 4.5, rx: 0, rz: 0 });
+  terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  terrainGeo.computeVertexNormals();
 
-  // Tank Tread Tracks leading across West Bank -> Pontoon Bridges -> East Bank Sand Berm Breaches
-  for (const bx of [-9.5, 9.5]) {
-    for (const dx of [-1.05, 1.05]) {
-      addStaticBox(bx + dx, 0.02, 15.2, 0.58, 0.02, 16.5, treadMat, false, 0, 0, false);
-      addStaticBox(bx + dx, 0.02, -14.8, 0.58, 0.02, 16.5, treadMat, false, 0, 0, false);
+  const rawIndex = terrainGeo.index.array;
+  const trimeshIndices = new Uint32Array(rawIndex.length);
+  for (let i = 0; i < rawIndex.length; i++) {
+    trimeshIndices[i] = rawIndex[i];
+  }
+
+  const terrainMesh = new THREE.Mesh(terrainGeo, sandMat);
+  terrainMesh.castShadow = false;
+  terrainMesh.receiveShadow = true;
+  group.add(terrainMesh);
+
+  // Tank Tread Tracks along the 3 Pontoon Bridge Assault Corridors (x = -28, 0, +28)
+  for (const bx of [-28.0, 0.0, 28.0]) {
+    for (const dx of [-1.1, 1.1]) {
+      addStaticBox(bx + dx, 0.03, 21.0, 0.62, 0.03, 22.0, treadMat, false, 0, 0, false);
+      addStaticBox(bx + dx, 0.03, -21.0, 0.62, 0.03, 22.0, treadMat, false, 0, 0, false);
     }
   }
 
-  // --- 2. Central Suez Canal Water Channel (z in [-4.5, 4.5]) + Sloped Quay Banks ---
-  const canalBedMesh = new THREE.Mesh(new THREE.BoxGeometry(48, 0.2, 9.2), bermMat);
-  canalBedMesh.position.set(0, -0.62, 0);
-  canalBedMesh.receiveShadow = true;
-  group.add(canalBedMesh);
-
+  // --- 2. Wide Suez Canal Water Channel (400m length x 16m width, z in [-8, 8]) ---
   const waterMat = new THREE.MeshStandardMaterial({
-    map: getWaterTexture(10, 2),
-    color: 0x2a7a85,
+    map: getWaterTexture(24, 3),
+    color: 0x246f7b,
     roughness: 0.2,
     metalness: 0.35,
     transparent: true,
     opacity: 0.88
   });
-  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(48, 9.0), waterMat);
+  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 16.4), waterMat);
   waterMesh.rotation.x = -Math.PI / 2;
-  waterMesh.position.set(0, -0.18, 0);
+  waterMesh.position.set(0, -0.35, 0);
   waterMesh.receiveShadow = true;
   waterMesh.castShadow = false;
   group.add(waterMesh);
 
-  // Concrete Seawall Quays + Walkable Exit Ramps along North/South canal edges
-  addStaticBox(0, -0.26, 4.65, 48, 0.54, 0.9, bunkerMat, true, -0.38, 0, false);
-  addStaticBox(0, -0.26, -4.65, 48, 0.54, 0.9, bunkerMat, true, 0.38, 0, false);
-
-  // Central Command Relay Pontoon Platform (supports Vault Core at x=0, z=0)
-  addStaticBox(0, 0.21, 0, 5.6, 0.42, 5.6, pontoonMat, true, 0, 0, false);
-
-  // --- 3. Perimeter Compound Boundary Walls (Sand-colored desert perimeter) ---
-  addStaticBox(0, 2.8, -24, 48, 5.6, 1.0, wallMat, true, 0, 0, false);
-  addStaticBox(0, 2.8, 24, 48, 5.6, 1.0, wallMat, true, 0, 0, false);
-  addStaticBox(-24, 2.8, 0, 1.0, 5.6, 48, wallMat, true, 0, 0, false);
-  addStaticBox(24, 2.8, 0, 1.0, 5.6, 48, wallMat, true, 0, 0, false);
-
-  // --- 4. East Bank Sand Berm Rampart (iconic sloped Bar-Lev sand wall with 2 breaches at x=±9.5) ---
+  // --- 3. Iconic East Bank Sand Berm Rampart (z = -22m, y = 4.5m crest, 3 wide assault breaches at x = -28, 0, +28) ---
   const bermSpans = [
-    { x: -16.8, w: 8.8 },
-    { x: 0.0, w: 13.6 },
-    { x: 16.8, w: 8.8 }
+    { x: -46.0, w: 24.0 },
+    { x: -14.0, w: 16.5 },
+    { x: 14.0, w: 16.5 },
+    { x: 46.0, w: 24.0 }
   ];
   for (const bs of bermSpans) {
-    // Solid compacted core underneath walkable berm crest (blocks fire & provides cover behind breaches)
-    addStaticBox(bs.x, 1.92, -13.5, bs.w, 3.84, 3.0, bermMat, true, 0, 0, false);
-    // Angled south-facing & north-facing desert sand slopes (2GB VRAM castShadow = false)
-    addStaticBox(bs.x, 1.9, -11.3, bs.w, 0.6, 4.4, bermMat, false, -0.76, 0, false);
-    addStaticBox(bs.x, 1.9, -15.7, bs.w, 0.6, 4.4, bermMat, false, 0.76, 0, false);
-    // Low sandbag crest parapet along south-facing edge for firing cover
-    for (let sx = bs.x - bs.w * 0.42; sx <= bs.x + bs.w * 0.42; sx += 1.45) {
-      sandbagInstances.push([sx, 4.42, -12.05, 0]);
+    // Solid compacted berm core (blocks fire & forms towering sand wall)
+    addStaticBox(bs.x, 2.15, -22.0, bs.w, 4.3, 3.6, bermMat, true, 0, 0, false);
+    // Sloped south-facing & north-facing desert sand embankments (castShadow = false for 2GB VRAM)
+    addStaticBox(bs.x, 2.1, -19.2, bs.w, 0.75, 5.2, bermMat, false, -0.74, 0, false);
+    addStaticBox(bs.x, 2.1, -24.8, bs.w, 0.75, 5.2, bermMat, false, 0.74, 0, false);
+    // Sandbag firing parapet along the 4.5m berm crest
+    for (let sx = bs.x - bs.w * 0.44; sx <= bs.x + bs.w * 0.44; sx += 1.8) {
+      sandbagInstances.push([sx, 4.72, -20.3, 0]);
     }
   }
 
-  // --- 5. Multi-Tier Bridges, Berm Crest, Observation/Radar Towers & Ramps ---
+  // --- 4. 3 Suez Canal Pontoon Bridges, Over-Breach Catwalks, 4 Radar Towers & 4 Berm Ramps ---
   const topY = UPPER_COMBAT_NETWORK.upper_deck_y;
   for (const seg of UPPER_COMBAT_NETWORK.segments) {
     const mat =
@@ -797,59 +820,46 @@ export function createArenaEnvironment() {
     addStaticBox(seg.x, deckCenterY, seg.z, seg.width, seg.height, seg.depth, mat, true, seg.rx, seg.rz, deckCastsShadow);
 
     if (seg.kind === 'pontoon') {
-      if (seg.depth > seg.width) {
-        // Main Pontoon Bridge floats + approach ramps + yellow/steel side curbs
-        for (const fz of [-3.4, 0, 3.4]) {
-          addStaticBox(seg.x, -0.02, fz, seg.width + 0.55, 0.34, 1.4, floatMat, false, 0, 0, false);
-        }
-        // Gentle approach ramps connecting West & East banks (y=0) to Pontoon deck (y=0.42)
-        addStaticBox(seg.x, 0.14, 5.9, seg.width, 0.2, 1.75, pontoonMat, true, 0.25, 0, false);
-        addStaticBox(seg.x, 0.14, -5.9, seg.width, 0.2, 1.75, pontoonMat, true, -0.25, 0, false);
-        // Side curbs + safety stanchions (gap at z=0 inner side for central causeway)
-        addStaticBox(seg.x + (seg.x < 0 ? -1.98 : 1.98), 0.72, 0, 0.16, 0.56, 9.8, cautionMat, false, 0, 0, false);
-        for (const dz of [-4.2, -2.1, 2.1, 4.2]) {
-          stanchionPositions.push([seg.x - 1.98, 0.68, dz], [seg.x + 1.98, 0.68, dz]);
-        }
-      } else {
-        // Causeway connecting Pontoon Bridges to Central Vault Island
-        addStaticBox(seg.x, -0.02, 0, seg.width * 0.7, 0.34, 1.6, floatMat, false, 0, 0, false);
-        for (const dz of [-1.22, 1.22]) {
-          addStaticBox(seg.x, 0.64, dz, seg.width - 0.3, 0.08, 0.12, cautionMat, false, 0, 0, false);
+      // Heavy military float pontoons across the 16m Suez Canal
+      for (const fz of [-6.2, -3.1, 0, 3.1, 6.2]) {
+        addStaticBox(seg.x, -0.1, fz, seg.width + 0.7, 0.42, 1.5, floatMat, false, 0, 0, false);
+      }
+      // Gentle approach ramps connecting Canal banks to Pontoon Bridge deck (y = 0.45m)
+      addStaticBox(seg.x, 0.16, 10.0, seg.width, 0.22, 2.6, pontoonMat, true, 0.18, 0, false);
+      addStaticBox(seg.x, 0.16, -10.0, seg.width, 0.22, 2.6, pontoonMat, true, -0.18, 0, false);
+      // Low steel wheel curbs + stanchions along bridge edges
+      for (const side of [-1, 1]) {
+        const rx = seg.x + side * (seg.width * 0.5 - 0.12);
+        addStaticBox(rx, 0.68, 0, 0.16, 0.32, seg.depth - 0.4, cautionMat, false, 0, 0, false);
+        for (const dz of [-7.2, -3.6, 0, 3.6, 7.2]) {
+          stanchionPositions.push([rx, 0.74, dz]);
         }
       }
     } else if (seg.kind === 'tower') {
-      // 4 Concrete support columns
-      for (const ox of [-1.55, 1.55]) {
-        for (const oz of [-1.55, 1.55]) {
-          addStaticBox(seg.x + ox, (topY - 0.16) * 0.5, seg.z + oz, 0.42, topY - 0.16, 0.42, bunkerMat, true, 0, 0, true);
+      const groundH = getSinaiTerrainHeight(seg.x, seg.z);
+      const colH = Math.max(1.5, topY - groundH - 0.16);
+      for (const ox of [-1.65, 1.65]) {
+        for (const oz of [-1.65, 1.65]) {
+          addStaticBox(seg.x + ox, groundH + colH * 0.5, seg.z + oz, 0.44, colH, 0.44, bunkerMat, true, 0, 0, true);
         }
       }
-      // Communications / Radar masts on North East-Bank Berm Towers
       if (seg.z < 0) {
-        addStaticBox(seg.x, topY + 1.35, seg.z, 0.22, 2.7, 0.22, steelMat, false, 0, 0, false);
+        addStaticBox(seg.x, topY + 1.4, seg.z, 0.24, 2.8, 0.24, steelMat, false, 0, 0, false);
         const dishGroup = new THREE.Group();
-        dishGroup.position.set(seg.x, topY + 2.75, seg.z);
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.24, 0.12), steelMat);
-        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), beaconMat);
-        tip.position.y = 0.25;
+        dishGroup.position.set(seg.x, topY + 2.85, seg.z);
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.26, 0.14), steelMat);
+        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.24), beaconMat);
+        tip.position.y = 0.26;
         dishGroup.add(bar, tip);
         group.add(dishGroup);
         radarDishes.push(dishGroup);
       } else {
-        addStaticBox(seg.x, topY + 0.95, seg.z + 1.8, 3.6, 0.1, 0.1, amberBeaconMat, false, 0, 0, false);
+        addStaticBox(seg.x, topY + 0.95, seg.z + 1.9, 3.8, 0.1, 0.1, amberBeaconMat, false, 0, 0, false);
       }
     } else if (seg.kind === 'catwalk') {
-      const isNS = seg.width > seg.depth;
-      if (isNS && seg.width > 12) {
-        for (const px of [-14, -5.5, 5.5, 14]) {
-          addStaticBox(px, (topY - 0.28) * 0.5, seg.z, 0.45, topY - 0.28, 0.45, bunkerMat, true, 0, 0, false);
-        }
-        const railZ = seg.z + (seg.z < 0 ? 1.42 : -1.42);
-        addStaticBox(seg.x, topY + 0.88, railZ, seg.width - 1.2, 0.09, 0.1, cautionMat, true, 0, 0, false);
-        for (let rx = -16; rx <= 16; rx += 4) {
-          stanchionPositions.push([rx, topY + 0.44, railZ]);
-        }
-      }
+      const railZ = seg.z + 1.32;
+      addStaticBox(seg.x, topY + 0.88, railZ, seg.width - 0.4, 0.09, 0.1, cautionMat, true, 0, 0, false);
+      stanchionPositions.push([seg.x - seg.width * 0.4, topY + 0.44, railZ], [seg.x + seg.width * 0.4, topY + 0.44, railZ]);
     } else if (seg.kind === 'ramp') {
       for (const sideX of [-seg.width * 0.5 + 0.06, seg.width * 0.5 - 0.06]) {
         addStaticBox(seg.x + sideX, seg.y + 0.78, seg.z, 0.09, 0.09, seg.depth, cautionMat, true, seg.rx, seg.rz, false);
@@ -858,7 +868,7 @@ export function createArenaEnvironment() {
     }
   }
 
-  // Batch stanchions in 1 InstancedMesh (2GB VRAM safe)
+  // Batch stanchions into 1 InstancedMesh (2GB VRAM optimal)
   if (stanchionPositions.length > 0) {
     const postGeo = new THREE.BoxGeometry(0.08, 0.88, 0.08);
     const postInst = new THREE.InstancedMesh(postGeo, steelMat, stanchionPositions.length);
@@ -873,44 +883,70 @@ export function createArenaEnvironment() {
     group.add(postInst);
   }
 
-  // --- 6. 4 Reinforced Bar-Lev Desert Concrete Bunkers with Dark Firing Slits ---
-  const bunkerPositions = [
-    { x: -14.8, z: -9.0, facingZ: 1 },  // East Bank West Breach guard bunker (faces canal)
-    { x: 14.8, z: -9.0, facingZ: 1 },   // East Bank East Breach guard bunker (faces canal)
-    { x: -14.8, z: 10.2, facingZ: -1 }, // West Bank West Staging bunker (faces canal)
-    { x: 14.8, z: 10.2, facingZ: -1 }   // West Bank East Staging bunker (faces canal)
-  ];
-  for (const bk of bunkerPositions) {
-    // Lower bunker base wall + overhanging concrete blast roof + corner pillars leaving wide firing slit
-    addStaticBox(bk.x, 0.55, bk.z, 4.4, 1.1, 3.0, bunkerMat, true, 0, 0, true);
-    addStaticBox(bk.x, 2.15, bk.z, 4.8, 0.42, 3.4, bunkerMat, true, 0, 0, true);
-    addStaticBox(bk.x - 1.85, 1.52, bk.z, 0.7, 0.85, 2.9, bunkerMat, true, 0, 0, false);
-    addStaticBox(bk.x + 1.85, 1.52, bk.z, 0.7, 0.85, 2.9, bunkerMat, true, 0, 0, false);
-    addStaticBox(bk.x, 1.52, bk.z - bk.facingZ * 1.15, 3.0, 0.85, 0.65, bunkerMat, true, 0, 0, false);
-    // Dark recessed firing slit visual interior
-    addStaticBox(bk.x, 1.52, bk.z + bk.facingZ * 0.45, 2.95, 0.62, 1.6, slitMat, false, 0, 0, false);
-    // Sandbag apron in front of bunker firing slit
-    for (let ox = -1.6; ox <= 1.6; ox += 0.8) {
-      sandbagInstances.push([bk.x + ox, 0.24, bk.z + bk.facingZ * 1.75, 0]);
+  // --- 5. 6 Reinforced Bar-Lev Desert Concrete Bunkers on Strategic Open-World Hills ---
+  for (const bk of UPPER_COMBAT_NETWORK.bunker_hills) {
+    const by = getSinaiTerrainHeight(bk.x, bk.z);
+    addStaticBox(bk.x, by + 0.55, bk.z, 4.8, 1.1, 3.4, bunkerMat, true, 0, 0, true);
+    addStaticBox(bk.x, by + 2.18, bk.z, 5.2, 0.44, 3.8, bunkerMat, true, 0, 0, true);
+    addStaticBox(bk.x - 2.0, by + 1.52, bk.z, 0.75, 0.88, 3.2, bunkerMat, true, 0, 0, false);
+    addStaticBox(bk.x + 2.0, by + 1.52, bk.z, 0.75, 0.88, 3.2, bunkerMat, true, 0, 0, false);
+    addStaticBox(bk.x, by + 1.52, bk.z - bk.facingZ * 1.25, 3.2, 0.88, 0.7, bunkerMat, true, 0, 0, false);
+    addStaticBox(bk.x, by + 1.52, bk.z + bk.facingZ * 0.48, 3.15, 0.64, 1.7, slitMat, false, 0, 0, false);
+    for (let ox = -1.8; ox <= 1.8; ox += 0.9) {
+      sandbagInstances.push([bk.x + ox, by + 0.24, bk.z + bk.facingZ * 2.0, 0]);
     }
     coverPoints.push({ x: bk.x, z: bk.z });
   }
 
-  // --- 7. Tactical Trenches & Sandbag Firing Barricades on West & East Banks ---
+  // --- 6. Open-Field Tactical Trenches & Sandbag Emplacements Across +-80m Combat Zone ---
   const trenches = [
-    { x: -4.2, z: 7.4, w: 4.2, h: 1.25, d: 0.9 },
-    { x: 4.2, z: 7.4, w: 4.2, h: 1.25, d: 0.9 },
-    { x: 0.0, z: 12.2, w: 4.6, h: 1.35, d: 0.95 },
-    { x: -4.2, z: -7.4, w: 4.2, h: 1.25, d: 0.9 },
-    { x: 4.2, z: -7.4, w: 4.2, h: 1.25, d: 0.9 },
-    { x: 0.0, z: -17.0, w: 4.8, h: 1.35, d: 0.95 }
+    { x: -14.0, z: 14.5, w: 5.2, h: 1.25, d: 0.95 },
+    { x: 14.0, z: 14.5, w: 5.2, h: 1.25, d: 0.95 },
+    { x: 0.0, z: 22.0, w: 5.6, h: 1.3, d: 0.95 },
+    { x: -24.0, z: 28.0, w: 5.2, h: 1.25, d: 0.95 },
+    { x: 24.0, z: 28.0, w: 5.2, h: 1.25, d: 0.95 },
+    { x: -14.0, z: -13.0, w: 5.2, h: 1.25, d: 0.95 },
+    { x: 14.0, z: -13.0, w: 5.2, h: 1.25, d: 0.95 },
+    { x: -22.0, z: -38.0, w: 5.6, h: 1.3, d: 0.95 },
+    { x: 22.0, z: -38.0, w: 5.6, h: 1.3, d: 0.95 }
   ];
   for (const tr of trenches) {
-    addStaticBox(tr.x, tr.h * 0.5, tr.z, tr.w, tr.h, tr.d, bunkerMat, true, 0, 0, true);
-    for (let sx = -tr.w * 0.4; sx <= tr.w * 0.4; sx += 0.82) {
-      sandbagInstances.push([tr.x + sx, tr.h + 0.18, tr.z, 0]);
+    const ty = getSinaiTerrainHeight(tr.x, tr.z);
+    addStaticBox(tr.x, ty + tr.h * 0.5, tr.z, tr.w, tr.h, tr.d, bunkerMat, true, 0, 0, true);
+    for (let sx = -tr.w * 0.42; sx <= tr.w * 0.42; sx += 0.85) {
+      sandbagInstances.push([tr.x + sx, ty + tr.h + 0.18, tr.z, 0]);
     }
     coverPoints.push({ x: tr.x, z: tr.z });
+  }
+
+  // --- 7. Desert Rocky Outcrops (Batched in 1 InstancedMesh + Rapier Colliders) ---
+  const rockCoords = [
+    [-64, -48, 2.4], [64, -48, 2.5], [-52, 54, 2.2], [52, 54, 2.3],
+    [-75, 14, 2.8], [75, 14, 2.7], [-72, -16, 2.6], [72, -16, 2.6],
+    [-32, -56, 2.1], [32, -56, 2.1], [-30, 56, 2.0], [30, 56, 2.0],
+    [-88, -75, 3.6], [88, -75, 3.5], [-88, 75, 3.4], [88, 75, 3.6]
+  ];
+  for (const [rx, rz, rScale] of rockCoords) {
+    const ry = getSinaiTerrainHeight(rx, rz);
+    rockInstances.push([rx, ry + rScale * 0.42, rz, rScale]);
+    colliders.push({ x: rx, y: ry + rScale * 0.42, z: rz, hx: rScale * 0.72, hy: rScale * 0.55, hz: rScale * 0.72, rx: 0, rz: 0 });
+    coverPoints.push({ x: rx, z: rz });
+  }
+
+  if (rockInstances.length > 0) {
+    const rockGeo = new THREE.DodecahedronGeometry(0.95, 0);
+    const rockInst = new THREE.InstancedMesh(rockGeo, rockMat, rockInstances.length);
+    const dummy = new THREE.Object3D();
+    rockInstances.forEach(([rx, ry, rz, sc], idx) => {
+      dummy.position.set(rx, ry, rz);
+      dummy.rotation.set(idx * 0.7, idx * 1.3, 0);
+      dummy.scale.set(sc * 1.15, sc * 0.75, sc);
+      dummy.updateMatrix();
+      rockInst.setMatrixAt(idx, dummy.matrix);
+    });
+    rockInst.castShadow = false;
+    rockInst.receiveShadow = true;
+    group.add(rockInst);
   }
 
   // Batch all Sandbag instances into a single InstancedMesh (2GB VRAM optimal)
@@ -929,12 +965,19 @@ export function createArenaEnvironment() {
     group.add(bagInst);
   }
 
-  return { group, colliders, coverPoints, radarDishes };
+  return {
+    group,
+    colliders,
+    coverPoints,
+    radarDishes,
+    terrainTrimesh: { vertices: trimeshVertices, indices: trimeshIndices }
+  };
 }
 
 export function createJumpPad(x, z) {
   const group = new THREE.Group();
-  group.position.set(x, 0, z);
+  const y = getSinaiTerrainHeight(x, z);
+  group.position.set(x, y, z);
   const baseMat = new THREE.MeshStandardMaterial({ map: getSteelTexture(1, 1), color: 0x252d3a, metalness: 0.75, roughness: 0.35 });
   const chevMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 2.2 });
 
@@ -953,7 +996,8 @@ export function createJumpPad(x, z) {
 
 export function createDestructibleCrate(id, x, z) {
   const group = new THREE.Group();
-  group.position.set(x, 0, z);
+  const y = getSinaiTerrainHeight(x, z);
+  group.position.set(x, y, z);
   group.userData.crateId = id;
   const woodMat = new THREE.MeshStandardMaterial({ map: getConcreteTexture(2, 2), color: 0xb27a44, roughness: 0.75, metalness: 0.1 });
   const bandMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(2, 1), roughness: 0.5, metalness: 0.4 });

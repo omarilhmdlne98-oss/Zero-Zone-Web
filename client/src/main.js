@@ -13,7 +13,7 @@ import {
   createSkyDome,
   createVaultStructure
 } from './models.js';
-import { UPPER_COMBAT_NETWORK, sampleCombatSurfaceY } from './bridge_network.js';
+import { UPPER_COMBAT_NETWORK, getSinaiTerrainHeight, sampleCombatSurfaceY } from './bridge_network.js';
 import { NetworkClient } from './network.js';
 
 // --- Global Visible Error Banner (ensures zero silent WebGL or runtime failures) ---
@@ -32,7 +32,7 @@ window.addEventListener('unhandledrejection', (ev) => {
   showDiagnosticError(`Async error: ${reason}`);
 });
 
-// --- Direct WebGL Renderer & Tactical Daylight/Dusk Lighting (2GB VRAM Optimized) ---
+// --- Direct WebGL Renderer & Open-World Sinai Desert Lighting (2GB VRAM Optimized) ---
 const canvas = document.getElementById('game-canvas');
 let renderer = null;
 try {
@@ -50,14 +50,14 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xd4b483);
-scene.fog = new THREE.FogExp2(0xc89d66, 0.0085);
+scene.background = new THREE.Color(0xd8b480);
+scene.fog = new THREE.FogExp2(0xd8b480, 0.0042);
 
 // Lightweight procedural IBL reflection probe tuned for sunlit Sinai desert (<0.5MB VRAM)
 try {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene();
-  envScene.background = new THREE.Color(0xd4b483);
+  envScene.background = new THREE.Color(0xd8b480);
   envScene.add(new THREE.HemisphereLight(0xfff3d6, 0xb88b58, 2.1));
   const envRT = pmrem.fromScene(envScene, 0.04);
   scene.environment = envRT.texture;
@@ -67,8 +67,12 @@ try {
   console.warn('[Zero-Zone] PMREM environment skipped:', err);
 }
 
-const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, 180);
-camera.position.set(0, 1.68, 15.5);
+const SPAWN_X = 0;
+const SPAWN_Z = 24.0;
+const SPAWN_Y = getSinaiTerrainHeight(SPAWN_X, SPAWN_Z);
+
+const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, 360);
+camera.position.set(SPAWN_X, SPAWN_Y + 1.68, SPAWN_Z);
 scene.add(camera);
 
 // Sky Dome + Warm Sand-Bounce Hemisphere Fill + Crisp Sinai Desert Sunlight
@@ -76,53 +80,54 @@ scene.add(createSkyDome());
 scene.add(new THREE.HemisphereLight(0xfff3d6, 0xb88b58, 1.35));
 
 const sun = new THREE.DirectionalLight(0xfff3d6, 2.0);
-sun.position.set(24, 38, 16);
+sun.position.set(42, 68, 32);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.near = 4;
-sun.shadow.camera.far = 95;
-sun.shadow.camera.left = -28;
-sun.shadow.camera.right = 28;
-sun.shadow.camera.top = 28;
-sun.shadow.camera.bottom = -28;
-sun.shadow.bias = -0.0005;
+sun.shadow.camera.near = 6;
+sun.shadow.camera.far = 185;
+sun.shadow.camera.left = -72;
+sun.shadow.camera.right = 72;
+sun.shadow.camera.top = 72;
+sun.shadow.camera.bottom = -72;
+sun.shadow.bias = -0.0006;
 scene.add(sun);
 
 const rimLight = new THREE.DirectionalLight(0xbfd8f2, 0.45);
-rimLight.position.set(-22, 16, -24);
+rimLight.position.set(-34, 24, -36);
 scene.add(rimLight);
 
-// --- Sinai Front Arena, Central Command Vault, Jump-Pads, Crates & 8 Fuel Barrels ---
+// --- 400m x 400m Open-World Sinai Battlefield, Vault, Jump-Pads, Crates & 8 Fuel Barrels ---
 const arenaEnv = createArenaEnvironment();
 scene.add(arenaEnv.group);
 
 const vault = createVaultStructure();
 scene.add(vault);
 
-const jumpPads = [createJumpPad(-13.8, 14.5), createJumpPad(13.8, -17.5)];
+const jumpPads = [createJumpPad(-22.0, 18.0), createJumpPad(22.0, -30.0)];
 jumpPads.forEach((p) => scene.add(p));
 
 const crateDefs = [
-  { id: 'crate_wb_w', x: -5.2, z: 12.2 },
-  { id: 'crate_wb_e', x: 5.2, z: 12.2 },
-  { id: 'crate_eb_w', x: -5.2, z: -9.2 },
-  { id: 'crate_eb_e', x: 5.2, z: -9.2 }
+  { id: 'crate_wb_w', x: -16.0, z: 20.0 },
+  { id: 'crate_wb_e', x: 16.0, z: 20.0 },
+  { id: 'crate_eb_w', x: -16.0, z: -15.5 },
+  { id: 'crate_eb_e', x: 16.0, z: -15.5 }
 ];
 const crates = new Map();
 
 const UPPER_DECK_Y = UPPER_COMBAT_NETWORK.upper_deck_y;
 const PONTOON_DECK_Y = UPPER_COMBAT_NETWORK.pontoon_deck_y;
 const barrelDefs = [
-  // 4 Suez Canal Pontoon Bridge & East Bank Berm Breach choke-point barrels
-  { id: 'barrel_pontoon_w', x: -9.5, y: PONTOON_DECK_Y, z: 0.0 },
-  { id: 'barrel_pontoon_e', x: 9.5, y: PONTOON_DECK_Y, z: 0.0 },
-  { id: 'barrel_breach_w', x: -9.5, y: 0, z: -10.5 },
-  { id: 'barrel_breach_e', x: 9.5, y: 0, z: -10.5 },
-  // 4 Upper Sand Berm Crest & West Overlook barrels (y = 4.2m)
-  { id: 'barrel_berm_nw', x: -16.8, y: UPPER_DECK_Y, z: -13.5 },
-  { id: 'barrel_berm_ne', x: 16.8, y: UPPER_DECK_Y, z: -13.5 },
-  { id: 'barrel_berm_c', x: 0.0, y: UPPER_DECK_Y, z: -13.5 },
-  { id: 'barrel_west_overlook', x: 0.0, y: UPPER_DECK_Y, z: 19.5 }
+  // 3 Suez Canal Pontoon Bridge choke-point barrels (x = -28, 0, +28)
+  { id: 'barrel_pontoon_w', x: -28.0, y: PONTOON_DECK_Y, z: 0.0 },
+  { id: 'barrel_pontoon_c', x: 0.0, y: PONTOON_DECK_Y, z: 0.0 },
+  { id: 'barrel_pontoon_e', x: 28.0, y: PONTOON_DECK_Y, z: 0.0 },
+  // 2 East Bank Sand Berm Breach assault corridor barrels
+  { id: 'barrel_breach_w', x: -28.0, y: getSinaiTerrainHeight(-28.0, -18.0), z: -18.0 },
+  { id: 'barrel_breach_e', x: 28.0, y: getSinaiTerrainHeight(28.0, -18.0), z: -18.0 },
+  // 3 Upper Sand Berm Crest & Strategic Bunker Hill barrels
+  { id: 'barrel_berm_nw', x: -14.0, y: UPPER_DECK_Y, z: -22.0 },
+  { id: 'barrel_berm_ne', x: 14.0, y: UPPER_DECK_Y, z: -22.0 },
+  { id: 'barrel_hill_cmd', x: 0.0, y: getSinaiTerrainHeight(0.0, -61.5), z: -61.5 }
 ];
 const barrels = new Map();
 
@@ -581,10 +586,10 @@ function spawnLocalBots() {
   const topY = UPPER_COMBAT_NETWORK.upper_deck_y;
   const pontY = UPPER_COMBAT_NETWORK.pontoon_deck_y;
   const botConfigs = [
-    { id: 'bot_0', name: 'Vanguard-01', kit: 'vanguard', weaponIdx: 0, x: -16.8, y: topY, z: -13.5, upperPatrol: true },
-    { id: 'bot_1', name: 'Spectre-02', kit: 'spectre', weaponIdx: 1, x: 16.8, y: topY, z: -13.5, upperPatrol: true },
-    { id: 'bot_2', name: 'Juggernaut-03', kit: 'juggernaut', weaponIdx: 2, x: -9.5, y: pontY, z: -2.2, upperPatrol: false },
-    { id: 'bot_3', name: 'Vanguard-04', kit: 'vanguard', weaponIdx: 0, x: 9.5, y: pontY, z: -2.2, upperPatrol: false }
+    { id: 'bot_0', name: 'Vanguard-01', kit: 'vanguard', weaponIdx: 0, x: -14.0, y: topY, z: -22.0, upperPatrol: true },
+    { id: 'bot_1', name: 'Spectre-02', kit: 'spectre', weaponIdx: 1, x: 14.0, y: topY, z: -22.0, upperPatrol: true },
+    { id: 'bot_2', name: 'Juggernaut-03', kit: 'juggernaut', weaponIdx: 2, x: -28.0, y: pontY, z: -3.5, upperPatrol: false },
+    { id: 'bot_3', name: 'Vanguard-04', kit: 'vanguard', weaponIdx: 0, x: 28.0, y: pontY, z: -3.5, upperPatrol: false }
   ];
 
   for (const cfg of botConfigs) {
@@ -612,7 +617,7 @@ function spawnLocalBots() {
       shield: stats.maxShield,
       maxShield: stats.maxShield,
       dmgRed: stats.dmgRed,
-      moveSpeed: stats.walk * 0.86,
+      moveSpeed: stats.walk * 0.9,
       alive: true,
       deathTimer: 0,
       respawnTimer: 0,
@@ -637,7 +642,7 @@ function alertBotsToGunshot(soundPos) {
   if (!localMode) return;
   for (const bot of localBots) {
     if (!bot.alive) continue;
-    if (bot.mesh.position.distanceTo(soundPos) <= 36) {
+    if (bot.mesh.position.distanceTo(soundPos) <= 68) {
       bot.alertPos = soundPos.clone();
       bot.alertTimer = 4.5;
     }
@@ -649,7 +654,7 @@ function hasBotLineOfSight(bot, targetPos) {
   const eye = bot.mesh.position.clone().add(new THREE.Vector3(0, bot.crouching ? 1.15 : 1.58, 0));
   const toTarget = targetPos.clone().sub(eye);
   const dist = toTarget.length();
-  if (dist > 34) return false;
+  if (dist > 64) return false;
   const dir = toTarget.normalize();
   // 120-degree vision cone check (unless alerted)
   if (bot.alertTimer <= 0) {
@@ -712,7 +717,7 @@ function applyDamageToLocalPlayer(rawDmg, attackerName, weaponName, isHeadshot =
       localState.alive = true;
       localState.hp = localState.maxHp;
       localState.shield = localState.maxShield;
-      playerBody.setTranslation({ x: 0, y: 2.0, z: 14 }, true);
+      playerBody.setTranslation({ x: SPAWN_X, y: SPAWN_Y + 2.0, z: SPAWN_Z }, true);
       playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
     }, 3000);
   }
@@ -820,7 +825,7 @@ function resetLocalArenaMatch() {
   localState.alive = true;
   weaponAmmo = WEAPONS.map((w) => ({ mag: w.magSize, reserve: w.maxReserve }));
   if (playerBody) {
-    playerBody.setTranslation({ x: 0, y: 2.0, z: 15.5 }, true);
+    playerBody.setTranslation({ x: SPAWN_X, y: SPAWN_Y + 2.0, z: SPAWN_Z }, true);
     playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
   }
   for (const cr of crates.values()) {
@@ -936,9 +941,9 @@ function handleNetMessage(msg) {
   }
 }
 
-// --- Lightweight Kinematic Fallback (guarantees playable arena even if WASM physics fails) ---
+// --- Lightweight Kinematic Fallback (guarantees playable 400m x 400m open terrain even if WASM fails) ---
 function createFallbackPhysics() {
-  const pos = { x: 0, y: 1.4, z: 15.5 };
+  const pos = { x: SPAWN_X, y: SPAWN_Y + 1.4, z: SPAWN_Z };
   const vel = { x: 0, y: 0, z: 0 };
   const body = {
     translation: () => ({ ...pos }),
@@ -950,8 +955,9 @@ function createFallbackPhysics() {
     step: () => {
       const dtStep = 1 / 60;
       vel.y -= 18.5 * dtStep;
-      pos.x = THREE.MathUtils.clamp(pos.x + vel.x * dtStep, -22.5, 22.5);
-      pos.z = THREE.MathUtils.clamp(pos.z + vel.z * dtStep, -22.5, 22.5);
+      const bound = UPPER_COMBAT_NETWORK.hard_boundary_radius_m;
+      pos.x = THREE.MathUtils.clamp(pos.x + vel.x * dtStep, -bound, bound);
+      pos.z = THREE.MathUtils.clamp(pos.z + vel.z * dtStep, -bound, bound);
       const floorY = sampleCombatSurfaceY(pos.x, pos.z, pos.y - 0.9) + 0.9;
       pos.y += vel.y * dtStep;
       if (pos.y < floorY) {
@@ -963,7 +969,7 @@ function createFallbackPhysics() {
   return { world: fallbackWorld, playerBody: body };
 }
 
-// --- Rapier3D Physics Init (1.80m Human Capsule + Sinai Canal/Berm Colliders + 8 Fuel Barrels) ---
+// --- Rapier3D Physics Init (1.80m Human Capsule + 400m x 400m Sinai Trimesh Terrain + Structures) ---
 async function initPhysics(kitId) {
   let useRapier = true;
   try {
@@ -978,10 +984,21 @@ async function initPhysics(kitId) {
   }
 
   if (useRapier) {
-    const vaultBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 2.52, 0));
+    // 1. Register exact 400m x 400m fBm Sinai Desert & Suez Canal heightmap as a Rapier3D Trimesh Collider
+    if (arenaEnv.terrainTrimesh) {
+      const terrainBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+      const trimeshDesc = RAPIER.ColliderDesc.trimesh(
+        arenaEnv.terrainTrimesh.vertices,
+        arenaEnv.terrainTrimesh.indices
+      );
+      world.createCollider(trimeshDesc, terrainBody);
+    }
+
+    const vaultBaseY = getSinaiTerrainHeight(0, -14.5);
+    const vaultBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, vaultBaseY + 2.25, -14.5));
     world.createCollider(RAPIER.ColliderDesc.cuboid(2.05, 2.25, 2.05), vaultBody);
 
-    // Register all West/East banks, recessed Suez Canal bed, Pontoon bridges, Sand Berm Rampart, Bunkers, and Ramps
+    // 2. Register Pontoon bridges, Sand Berm Rampart, 6 Hill-top Bar-Lev Bunkers, Trenches, Ramps & Rocky Outcrops
     const tmpQuat = new THREE.Quaternion();
     const tmpEuler = new THREE.Euler();
     for (const col of arenaEnv.colliders) {
@@ -1001,13 +1018,14 @@ async function initPhysics(kitId) {
     scene.add(mesh);
     let collider = null;
     if (useRapier) {
-      const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(def.x, 0.75, def.z));
+      const cy = getSinaiTerrainHeight(def.x, def.z);
+      const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(def.x, cy + 0.75, def.z));
       collider = world.createCollider(RAPIER.ColliderDesc.cuboid(0.9, 0.75, 0.9), body);
     }
     crates.set(def.id, { mesh, collider, hp: 100 });
   }
 
-  // Spawn 8 Destructible Explosive Red Fuel Barrels (Pontoon bridges, Sand Berm breaches & Berm Crest)
+  // Spawn 8 Destructible Explosive Red Fuel Barrels conformed to terrain/bridge height
   for (const def of barrelDefs) {
     const mesh = createExplosiveBarrel(def.id, def.x, def.y, def.z);
     scene.add(mesh);
@@ -1027,9 +1045,9 @@ async function initPhysics(kitId) {
   localState.shield = stats.maxShield;
 
   if (useRapier) {
-    // 1.80m human capsule spawned on West Bank staging facing Suez Canal & East Bank Berm
+    // 1.80m human capsule spawned on West Bank overlooking the 3 Pontoon Bridges & East Bank Sand Berm
     playerBody = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 1.4, 15.5).lockRotations()
+      RAPIER.RigidBodyDesc.dynamic().setTranslation(SPAWN_X, SPAWN_Y + 1.4, SPAWN_Z).lockRotations()
     );
     world.createCollider(RAPIER.ColliderDesc.capsule(0.56, 0.34), playerBody);
   }
@@ -1249,7 +1267,7 @@ function updateTacticalBots(dt, pNew) {
 
       // Fire realistic ballistic projectile
       bot.fireCd -= dt;
-      if (bot.fireCd <= 0 && dist < 30) {
+      if (bot.fireCd <= 0 && dist < 56) {
         const wpn = WEAPONS[bot.weaponIdx];
         bot.fireCd = wpn.fireInterval * (wpn.id === 'rifle' ? 2.4 : 1.7) + Math.random() * 0.45;
         const muzzlePos = bot.mesh.position.clone().add(new THREE.Vector3(0, bot.crouching ? 1.1 : 1.48, 0));
@@ -1271,14 +1289,14 @@ function updateTacticalBots(dt, pNew) {
     } else {
       bot.state = 'PATROL';
       desiredMove.subVectors(bot.waypoint, bot.mesh.position).setY(0);
-      if (desiredMove.length() < 1.6) {
-        if (bot.upperPatrol || bot.mesh.position.y >= 1.8) {
+      if (desiredMove.length() < 1.8) {
+        if (bot.upperPatrol || bot.mesh.position.y >= 2.2) {
           const wps = UPPER_COMBAT_NETWORK.upper_waypoints;
           const pick = wps[Math.floor(Math.random() * wps.length)];
           bot.waypoint.set(pick.x, pick.y, pick.z);
         } else {
-          // Route across Pontoon Bridges, Sand Berm Breaches, or climb a Berm Access Ramp
-          if (Math.random() < 0.35) {
+          // Route across 3 Pontoon Bridges, Sand Berm Breaches, Bunker Hills, or Berm Ramps
+          if (Math.random() < 0.3) {
             const ramp = UPPER_COMBAT_NETWORK.ramp_navs[Math.floor(Math.random() * UPPER_COMBAT_NETWORK.ramp_navs.length)];
             bot.waypoint.set(ramp.x, ramp.topY, ramp.zTop);
           } else {
@@ -1291,26 +1309,27 @@ function updateTacticalBots(dt, pNew) {
       lookTarget = bot.waypoint;
     }
 
-    // Apply movement with vault & perimeter bounds avoidance
+    // Apply movement across the wide +-90m open-world combat zone while avoiding the Vault core
     let actualSpeed = 0;
     if (desiredMove.lengthSq() > 0.04) {
       desiredMove.normalize();
       const spd = bot.crouching ? bot.moveSpeed * 0.62 : bot.moveSpeed;
-      const nx = THREE.MathUtils.clamp(bot.mesh.position.x + desiredMove.x * spd * dt, -21.2, 21.2);
-      const nz = THREE.MathUtils.clamp(bot.mesh.position.z + desiredMove.z * spd * dt, -21.2, 21.2);
-      if (Math.hypot(nx, nz) > 2.55) {
+      const cz = UPPER_COMBAT_NETWORK.combat_zone_radius_m;
+      const nx = THREE.MathUtils.clamp(bot.mesh.position.x + desiredMove.x * spd * dt, -cz, cz);
+      const nz = THREE.MathUtils.clamp(bot.mesh.position.z + desiredMove.z * spd * dt, -cz, cz);
+      if (Math.hypot(nx - vault.position.x, nz - vault.position.z) > 2.65) {
         bot.mesh.position.x = nx;
         bot.mesh.position.z = nz;
         actualSpeed = spd;
       }
     }
 
-    // Multi-tier surface elevation (ground, 4 smooth inclined ramps, 4 perimeter catwalks, 2 cross-bridges, Vault overpass)
+    // Multi-tier surface elevation (400m x 400m fBm Sinai desert heightfield, Suez Canal, 3 Pontoon Bridges, Berm Ramps & Crest)
     const floorY = sampleCombatSurfaceY(bot.mesh.position.x, bot.mesh.position.z, bot.mesh.position.y);
 
     // Bot jump-pad bounce
     for (const pad of jumpPads) {
-      if (Math.hypot(bot.mesh.position.x - pad.position.x, bot.mesh.position.z - pad.position.z) < 1.5 && bot.mesh.position.y <= 0.2) {
+      if (Math.hypot(bot.mesh.position.x - pad.position.x, bot.mesh.position.z - pad.position.z) < 1.5 && Math.abs(bot.mesh.position.y - pad.position.y) <= 0.45) {
         bot.vy = 11.5;
       }
     }
@@ -1620,7 +1639,7 @@ function animate() {
     if (localMode) {
       if (!localMatchResetting) {
         localState.matchRemaining = Math.max(0, localState.matchRemaining - dt);
-        const nearVault = Math.hypot(pNew.x, pNew.z) <= 5.5;
+        const nearVault = Math.hypot(pNew.x - vault.position.x, pNew.z - vault.position.z) <= 6.2;
         if (localState.alive && act.breach && nearVault) {
           localState.breachProgress = Math.min(20, localState.breachProgress + dt);
         } else if (localState.breachProgress > 0) {
