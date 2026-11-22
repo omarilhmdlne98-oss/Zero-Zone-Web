@@ -51,7 +51,12 @@ export class DualControls {
 
     this.canvas.addEventListener('click', () => {
       if (!this.isTouch && document.pointerLockElement !== this.canvas) {
-        this.canvas.requestPointerLock?.();
+        try {
+          const req = this.canvas.requestPointerLock?.();
+          if (req && typeof req.catch === 'function') {
+            req.catch(() => {});
+          }
+        } catch {}
       }
     });
 

@@ -580,12 +580,12 @@ export function createArenaEnvironment() {
   floor.receiveShadow = true;
   group.add(floor);
 
-  const addStaticBox = (x, y, z, w, h, d, mat, registerCollider = true, rx = 0, rz = 0) => {
+  const addStaticBox = (x, y, z, w, h, d, mat, registerCollider = true, rx = 0, rz = 0, castsShadow = true) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
     if (rx !== 0) mesh.rotation.x = rx;
     if (rz !== 0) mesh.rotation.z = rz;
-    mesh.castShadow = true;
+    mesh.castShadow = castsShadow;
     mesh.receiveShadow = true;
     group.add(mesh);
     if (registerCollider) {
@@ -595,10 +595,10 @@ export function createArenaEnvironment() {
   };
 
   // Perimeter Armored Concrete Compound Walls
-  addStaticBox(0, 3.0, -24, 48, 6.0, 1.0, wallMat);
-  addStaticBox(0, 3.0, 24, 48, 6.0, 1.0, wallMat);
-  addStaticBox(-24, 3.0, 0, 1.0, 6.0, 48, wallMat);
-  addStaticBox(24, 3.0, 0, 1.0, 6.0, 48, wallMat);
+  addStaticBox(0, 3.0, -24, 48, 6.0, 1.0, wallMat, true, 0, 0, false);
+  addStaticBox(0, 3.0, 24, 48, 6.0, 1.0, wallMat, true, 0, 0, false);
+  addStaticBox(-24, 3.0, 0, 1.0, 6.0, 48, wallMat, true, 0, 0, false);
+  addStaticBox(24, 3.0, 0, 1.0, 6.0, 48, wallMat, true, 0, 0, false);
 
   // --- Interconnected Upper Combat Network (Exported from Static-Recomp-Native) ---
   // 4 Corner Towers, 4 Perimeter Catwalks, Vault Overpass Ring, 2 Central Cross-Bridges, 4 Smooth Inclined Ramps
@@ -612,46 +612,47 @@ export function createArenaEnvironment() {
           ? steelMat
           : grateMat;
 
-    // Deck / Ramp surface (center y adjusted so top face sits cleanly at seg.y for flat decks)
-    const deckCenterY = seg.kind === 'ramp' ? seg.y - seg.height * 0.5 : seg.y - seg.height * 0.5;
-    addStaticBox(seg.x, deckCenterY, seg.z, seg.width, seg.height, seg.depth, mat, true, seg.rx, seg.rz);
+    // Disable real-time shadow casting on catwalk grating, cross-bridges, and ramps (2GB VRAM optimization)
+    const deckCastsShadow = seg.kind === 'tower';
+    const deckCenterY = seg.y - seg.height * 0.5;
+    addStaticBox(seg.x, deckCenterY, seg.z, seg.width, seg.height, seg.depth, mat, true, seg.rx, seg.rz, deckCastsShadow);
 
     if (seg.kind === 'tower') {
       // 4 reinforced tower support columns + glowing tactical beacon
       for (const ox of [-1.6, 1.6]) {
         for (const oz of [-1.6, 1.6]) {
-          addStaticBox(seg.x + ox, (topY - 0.16) * 0.5, seg.z + oz, 0.36, topY - 0.16, 0.36, towerMat);
+          addStaticBox(seg.x + ox, (topY - 0.16) * 0.5, seg.z + oz, 0.36, topY - 0.16, 0.36, towerMat, true, 0, 0, true);
         }
       }
-      addStaticBox(seg.x, topY + 1.08, seg.z + (seg.z < 0 ? -1.85 : 1.85), 3.6, 0.1, 0.1, amberBeaconMat, false);
+      addStaticBox(seg.x, topY + 1.08, seg.z + (seg.z < 0 ? -1.85 : 1.85), 3.6, 0.1, 0.1, amberBeaconMat, false, 0, 0, false);
     } else if (seg.kind === 'catwalk') {
       // Under-deck tactical glow trim + support pillars at thirds
       const isNS = seg.width > seg.depth;
       if (isNS) {
-        addStaticBox(seg.x, topY - 0.32, seg.z + (seg.z < 0 ? 1.55 : -1.55), seg.width - 2, 0.08, 0.08, beaconMat, false);
+        addStaticBox(seg.x, topY - 0.32, seg.z + (seg.z < 0 ? 1.55 : -1.55), seg.width - 2, 0.08, 0.08, beaconMat, false, 0, 0, false);
         for (const px of [-14, -5.5, 5.5, 14]) {
-          addStaticBox(px, (topY - 0.28) * 0.5, seg.z, 0.45, topY - 0.28, 0.45, steelMat);
+          addStaticBox(px, (topY - 0.28) * 0.5, seg.z, 0.45, topY - 0.28, 0.45, steelMat, true, 0, 0, false);
         }
-        // Guardrail segments with open passages at cross-bridge (x=0) and ramps (x=+/-11.8)
+        // Guardrail segments (castShadow = false for 2GB VRAM performance)
         const railZ = seg.z + (seg.z < 0 ? 1.52 : -1.52);
         for (const [rxStart, rxEnd] of [[-17.2, -13.4], [-10.0, -1.7], [1.7, 10.0], [13.4, 17.2]]) {
           const rw = rxEnd - rxStart;
           const rcx = (rxStart + rxEnd) * 0.5;
-          addStaticBox(rcx, topY + 0.92, railZ, rw, 0.09, 0.1, cautionMat, true);
-          addStaticBox(rcx, topY + 0.46, railZ, rw, 0.07, 0.08, steelMat, false);
+          addStaticBox(rcx, topY + 0.92, railZ, rw, 0.09, 0.1, cautionMat, true, 0, 0, false);
+          addStaticBox(rcx, topY + 0.46, railZ, rw, 0.07, 0.08, steelMat, false, 0, 0, false);
           stanchionPositions.push([rxStart + 0.2, topY + 0.46, railZ], [rxEnd - 0.2, topY + 0.46, railZ]);
         }
       } else {
-        addStaticBox(seg.x + (seg.x < 0 ? 1.55 : -1.55), topY - 0.32, seg.z, 0.08, 0.08, seg.depth - 2, beaconMat, false);
+        addStaticBox(seg.x + (seg.x < 0 ? 1.55 : -1.55), topY - 0.32, seg.z, 0.08, 0.08, seg.depth - 2, beaconMat, false, 0, 0, false);
         for (const pz of [-13, -5.5, 5.5, 13]) {
-          addStaticBox(seg.x, (topY - 0.28) * 0.5, pz, 0.45, topY - 0.28, 0.45, steelMat);
+          addStaticBox(seg.x, (topY - 0.28) * 0.5, pz, 0.45, topY - 0.28, 0.45, steelMat, true, 0, 0, false);
         }
         const railX = seg.x + (seg.x < 0 ? 1.52 : -1.52);
         for (const [rzStart, rzEnd] of [[-17.2, -1.7], [1.7, 17.2]]) {
           const rd = rzEnd - rzStart;
           const rcz = (rzStart + rzEnd) * 0.5;
-          addStaticBox(railX, topY + 0.92, rcz, 0.1, 0.09, rd, cautionMat, true);
-          addStaticBox(railX, topY + 0.46, rcz, 0.08, 0.07, rd, steelMat, false);
+          addStaticBox(railX, topY + 0.92, rcz, 0.1, 0.09, rd, cautionMat, true, 0, 0, false);
+          addStaticBox(railX, topY + 0.46, rcz, 0.08, 0.07, rd, steelMat, false, 0, 0, false);
           stanchionPositions.push([railX, topY + 0.46, rzStart + 0.2], [railX, topY + 0.46, rzEnd - 0.2]);
         }
       }
@@ -659,37 +660,36 @@ export function createArenaEnvironment() {
       const isEW = seg.width > seg.depth;
       if (isEW) {
         for (const dz of [-1.42, 1.42]) {
-          addStaticBox(seg.x, topY + 0.92, seg.z + dz, seg.width - 0.6, 0.08, 0.09, cautionMat, true);
+          addStaticBox(seg.x, topY + 0.92, seg.z + dz, seg.width - 0.6, 0.08, 0.09, cautionMat, true, 0, 0, false);
           stanchionPositions.push(
             [seg.x - seg.width * 0.4, topY + 0.46, seg.z + dz],
             [seg.x, topY + 0.46, seg.z + dz],
             [seg.x + seg.width * 0.4, topY + 0.46, seg.z + dz]
           );
         }
-        addStaticBox(seg.x, topY - 0.28, seg.z, seg.width - 0.8, 0.08, 0.12, beaconMat, false);
+        addStaticBox(seg.x, topY - 0.28, seg.z, seg.width - 0.8, 0.08, 0.12, beaconMat, false, 0, 0, false);
       } else {
         for (const dx of [-1.42, 1.42]) {
-          addStaticBox(seg.x + dx, topY + 0.92, seg.z, 0.09, 0.08, seg.depth - 0.6, cautionMat, true);
+          addStaticBox(seg.x + dx, topY + 0.92, seg.z, 0.09, 0.08, seg.depth - 0.6, cautionMat, true, 0, 0, false);
           stanchionPositions.push(
             [seg.x + dx, topY + 0.46, seg.z - seg.depth * 0.4],
             [seg.x + dx, topY + 0.46, seg.z],
             [seg.x + dx, topY + 0.46, seg.z + seg.depth * 0.4]
           );
         }
-        addStaticBox(seg.x, topY - 0.28, seg.z, 0.12, 0.08, seg.depth - 0.8, beaconMat, false);
+        addStaticBox(seg.x, topY - 0.28, seg.z, 0.12, 0.08, seg.depth - 0.8, beaconMat, false, 0, 0, false);
       }
     } else if (seg.kind === 'ramp') {
-      // Sloped steel side stringers + safety handrails aligned to ramp pitch
+      // Sloped steel side stringers + safety handrails aligned to ramp pitch (no real-time shadow casting)
       for (const sideX of [-seg.width * 0.5 + 0.06, seg.width * 0.5 - 0.06]) {
-        addStaticBox(seg.x + sideX, seg.y + 0.78, seg.z, 0.09, 0.09, seg.depth, cautionMat, true, seg.rx, seg.rz);
-        addStaticBox(seg.x + sideX, seg.y + 0.36, seg.z, 0.07, 0.07, seg.depth, steelMat, false, seg.rx, seg.rz);
+        addStaticBox(seg.x + sideX, seg.y + 0.78, seg.z, 0.09, 0.09, seg.depth, cautionMat, true, seg.rx, seg.rz, false);
+        addStaticBox(seg.x + sideX, seg.y + 0.36, seg.z, 0.07, 0.07, seg.depth, steelMat, false, seg.rx, seg.rz, false);
       }
-      // Emissive floor guidance strips along ramp center
-      addStaticBox(seg.x, seg.y + 0.03, seg.z, 0.16, 0.03, seg.depth - 0.8, beaconMat, false, seg.rx, seg.rz);
+      addStaticBox(seg.x, seg.y + 0.03, seg.z, 0.16, 0.03, seg.depth - 0.8, beaconMat, false, seg.rx, seg.rz, false);
     }
   }
 
-  // Batch all guardrail stanchions into a single InstancedMesh (2GB VRAM & draw-call optimization)
+  // Batch all guardrail stanchions into a single InstancedMesh (castShadow = false for 2GB VRAM)
   if (stanchionPositions.length > 0) {
     const postGeo = new THREE.BoxGeometry(0.08, 0.92, 0.08);
     const postInst = new THREE.InstancedMesh(postGeo, steelMat, stanchionPositions.length);
@@ -699,16 +699,16 @@ export function createArenaEnvironment() {
       dummy.updateMatrix();
       postInst.setMatrixAt(idx, dummy.matrix);
     });
-    postInst.castShadow = true;
-    postInst.receiveShadow = true;
+    postInst.castShadow = false;
+    postInst.receiveShadow = false;
     group.add(postInst);
   }
 
   // Reinforced Ballistic Shield Bunkers on East & West Mid-Lane Approaches
   for (const bx of [-15.8, 15.8]) {
-    addStaticBox(bx, 0.92, 0, 2.0, 1.85, 4.4, wallMat);
-    addStaticBox(bx, 2.05, 0, 2.35, 0.24, 4.7, steelMat);
-    addStaticBox(bx + (bx < 0 ? 1.05 : -1.05), 1.45, 0, 0.08, 0.14, 3.4, beaconMat, false);
+    addStaticBox(bx, 0.92, 0, 2.0, 1.85, 4.4, wallMat, true, 0, 0, true);
+    addStaticBox(bx, 2.05, 0, 2.35, 0.24, 4.7, steelMat, true, 0, 0, false);
+    addStaticBox(bx + (bx < 0 ? 1.05 : -1.05), 1.45, 0, 0.08, 0.14, 3.4, beaconMat, false, 0, 0, false);
     coverPoints.push({ x: bx, z: 0 });
   }
 
@@ -722,8 +722,8 @@ export function createArenaEnvironment() {
     { x: 0, z: 10.5, w: 4.2, h: 1.6, d: 0.8 }
   ];
   for (const b of barriers) {
-    addStaticBox(b.x, b.h / 2, b.z, b.w, b.h, b.d, wallMat);
-    addStaticBox(b.x, b.h + 0.08, b.z, b.w, 0.14, b.d * 0.95, cautionMat, false);
+    addStaticBox(b.x, b.h / 2, b.z, b.w, b.h, b.d, wallMat, true, 0, 0, true);
+    addStaticBox(b.x, b.h + 0.08, b.z, b.w, 0.14, b.d * 0.95, cautionMat, false, 0, 0, false);
     coverPoints.push({ x: b.x, z: b.z });
   }
 

@@ -241,6 +241,8 @@ function spawnImpactFX(point, normal, isMetallic = false) {
   const mat = new THREE.MeshBasicMaterial({ color });
   for (let i = 0; i < count; i++) {
     const m = new THREE.Mesh(geo, mat);
+    m.castShadow = false;
+    m.receiveShadow = false;
     m.position.copy(point);
     const vel = normal.clone().multiplyScalar(2.5 + Math.random() * 3.5);
     vel.x += (Math.random() - 0.5) * 4.5;
@@ -256,6 +258,8 @@ function spawnShellCasing() {
   const geo = new THREE.CylinderGeometry(0.008, 0.008, 0.036, 6);
   const mat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.25 });
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
   const worldPos = new THREE.Vector3(0.14, -0.05, -0.32).applyMatrix4(camera.matrixWorld);
   mesh.position.copy(worldPos);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
@@ -1395,34 +1399,73 @@ function animate() {
   composer.render();
 }
 
-// --- Lobby Startup ---
+// --- Lobby Startup (Non-Blocking Instant Deploy + Error Fallback) ---
 const DEFAULT_WS_URL = (import.meta.env.VITE_WS_URL || '').trim();
 const wsInputEl = document.getElementById('ws-input');
 if (wsInputEl) wsInputEl.value = DEFAULT_WS_URL;
 
-document.getElementById('btn-play').addEventListener('click', async () => {
-  const kit = document.getElementById('kit-select').value;
-  const room = document.getElementById('room-input').value.trim() || 'alpha';
-  currentRoomName = room;
-  const wsUrl = (wsInputEl?.value || '').trim() || DEFAULT_WS_URL;
+const deployBtn = document.getElementById('deployBtn') || document.getElementById('btn-play');
+let isDeploying = false;
 
-  document.getElementById('lobby').style.display = 'none';
-  document.getElementById('hud').style.display = 'block';
-  document.getElementById('hud-room').textContent = wsUrl ? `Room: ${room}` : 'Solo AI Arena | KOs: 0';
+deployBtn?.addEventListener('click', async () => {
+  if (isDeploying) return;
+  isDeploying = true;
 
-  await initPhysics(kit);
-  net = new NetworkClient(
-    handleNetMessage,
-    (st) => {
-      document.getElementById('lobby-status').textContent = st;
-    },
-    () => {
-      enableLocalArenaMode();
+  const statusEl = document.getElementById('lobby-status');
+  const errEl = document.getElementById('deploy-error');
+  if (errEl) errEl.style.display = 'none';
+  deployBtn.disabled = true;
+  deployBtn.textContent = 'Initializing Physics & Arena...';
+  if (statusEl) statusEl.textContent = 'Initializing Physics & Arena...';
+
+  // Request pointer lock safely during the user gesture without ever rejecting or freezing the UI
+  if (!controls.isTouch) {
+    try {
+      const lockPromise = canvas.requestPointerLock?.();
+      if (lockPromise && typeof lockPromise.catch === 'function') {
+        lockPromise.catch(() => {});
+      }
+    } catch {}
+  }
+
+  // Yield one animation frame so the browser immediately paints the loading state
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  try {
+    const kit = document.getElementById('kit-select')?.value || 'vanguard';
+    const room = document.getElementById('room-input')?.value.trim() || 'alpha';
+    currentRoomName = room;
+    const wsUrl = (wsInputEl?.value || '').trim() || DEFAULT_WS_URL;
+
+    await initPhysics(kit);
+
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('hud').style.display = 'block';
+    document.getElementById('hud-room').textContent = wsUrl ? `Room: ${room}` : 'Solo AI Arena | KOs: 0';
+
+    net = new NetworkClient(
+      handleNetMessage,
+      (st) => {
+        if (statusEl) statusEl.textContent = st;
+      },
+      () => {
+        enableLocalArenaMode();
+      }
+    );
+    net.connect(wsUrl, room, kit);
+    try { sfx.radioCue(); } catch {}
+    running = true;
+  } catch (err) {
+    console.error('[Zero-Zone] Deploy failed:', err);
+    isDeploying = false;
+    deployBtn.disabled = false;
+    deployBtn.textContent = 'Deploy to Arena';
+    if (errEl) {
+      errEl.textContent = `Launch error: ${err?.message || 'Unexpected initialization error'}. Please try again.`;
+      errEl.style.display = 'block';
     }
-  );
-  net.connect(wsUrl, room, kit);
-  sfx.radioCue();
-  running = true;
+    if (statusEl) statusEl.textContent = 'Initialization error — click Deploy to retry.';
+  }
 });
 
 window.addEventListener('resize', () => {
