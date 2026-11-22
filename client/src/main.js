@@ -76,7 +76,8 @@ camera.position.set(SPAWN_X, SPAWN_Y + 1.68, SPAWN_Z);
 scene.add(camera);
 
 // Sky Dome + Warm Sand-Bounce Hemisphere Fill + Crisp Sinai Desert Sunlight
-scene.add(createSkyDome());
+const skyDome = createSkyDome();
+scene.add(skyDome);
 scene.add(new THREE.HemisphereLight(0xfff3d6, 0xb88b58, 1.35));
 
 const sun = new THREE.DirectionalLight(0xfff3d6, 2.0);
