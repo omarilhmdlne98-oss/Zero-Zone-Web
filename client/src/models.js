@@ -40,6 +40,8 @@ const SKY_VERT = `
 const SKY_FRAG = `
   uniform float uTime;
   uniform vec3 uSunDir;
+  uniform vec3 uZenithColor;
+  uniform vec3 uHorizonColor;
   varying vec3 vWorldPos;
 
   float hash21(vec2 p) {
@@ -66,9 +68,9 @@ const SKY_FRAG = `
     float sunDot = max(0.0, dot(dir, sunDir));
 
     // Rayleigh / Mie Sinai Desert Scattering Gradient
-    vec3 zenith = vec3(0.22, 0.48, 0.78);
-    vec3 midSky = vec3(0.58, 0.73, 0.86);
-    vec3 dustHorizon = vec3(0.847, 0.706, 0.502);
+    vec3 zenith = uZenithColor;
+    vec3 dustHorizon = uHorizonColor;
+    vec3 midSky = mix(dustHorizon, zenith, 0.48) + vec3(0.08, 0.08, 0.07);
 
     vec3 col = mix(dustHorizon, midSky, smoothstep(0.0, 0.28, max(0.0, h)));
     col = mix(col, zenith, smoothstep(0.24, 0.88, max(0.0, h)));
@@ -79,13 +81,13 @@ const SKY_FRAG = `
       float c1 = noise2D(cloudUV * 2.2);
       float c2 = noise2D(cloudUV * 4.8 + 3.7);
       float cloud = smoothstep(0.56, 0.86, c1 * 0.65 + c2 * 0.35) * smoothstep(0.06, 0.28, h);
-      col = mix(col, vec3(0.99, 0.95, 0.86), cloud * 0.28);
+      col = mix(col, mix(dustHorizon, vec3(1.0), 0.72), cloud * 0.26);
     }
 
     // Mie forward-scattering golden solar aureole & crisp sun disc
     float mieHalo = pow(sunDot, 7.0) * 0.36 + pow(sunDot, 42.0) * 0.45;
     float sunDisc = smoothstep(0.9982, 0.9996, sunDot);
-    col += vec3(1.0, 0.88, 0.62) * mieHalo + vec3(1.0, 0.98, 0.88) * sunDisc * 1.35;
+    col += mix(dustHorizon, vec3(1.0, 0.92, 0.72), 0.6) * mieHalo + vec3(1.0, 0.98, 0.88) * sunDisc * 1.35;
 
     // Warm desert dust band right at the horizon
     float horizonDust = pow(1.0 - clamp(abs(h) * 3.4, 0.0, 1.0), 2.4);
@@ -112,6 +114,8 @@ const SUEZ_WATER_FRAG = `
   uniform float uTime;
   uniform vec3 uSunDir;
   uniform vec3 uCameraPos;
+  uniform vec3 uHorizonColor;
+  uniform float uFogDensity;
   varying vec3 vWorldPos;
   varying vec2 vUv;
 
@@ -142,7 +146,7 @@ const SUEZ_WATER_FRAG = `
     float bankDist = abs(vWorldPos.z) / 8.2;
     vec3 deepCol = vec3(0.07, 0.28, 0.35);
     vec3 shallowCol = vec3(0.18, 0.48, 0.52);
-    vec3 skyReflect = vec3(0.78, 0.72, 0.58);
+    vec3 skyReflect = mix(vec3(0.35, 0.48, 0.62), uHorizonColor, 0.72);
 
     vec3 waterCol = mix(deepCol, shallowCol, smoothstep(0.35, 0.95, bankDist) + h0 * 0.08);
     waterCol = mix(waterCol, skyReflect, fresnel * 0.58);
@@ -156,10 +160,10 @@ const SUEZ_WATER_FRAG = `
 
     waterCol = mix(waterCol, vec3(0.92, 0.90, 0.82), totalFoam * 0.72);
 
-    // Distance fog blend matching scene.fog (0xd8b480, density 0.0042)
+    // Distance fog blend matching scene.fog
     float camDist = length(uCameraPos - vWorldPos);
-    float fogFactor = 1.0 - exp(-0.0042 * 0.0042 * camDist * camDist);
-    waterCol = mix(waterCol, vec3(0.847, 0.706, 0.502), clamp(fogFactor, 0.0, 1.0));
+    float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * camDist * camDist);
+    waterCol = mix(waterCol, uHorizonColor, clamp(fogFactor, 0.0, 1.0));
 
     gl_FragColor = vec4(waterCol, 0.91);
     #include <tonemapping_fragment>
@@ -759,7 +763,9 @@ export function createSkyDome() {
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0.0 },
-      uSunDir: { value: new THREE.Vector3(42, 68, 32).normalize() }
+      uSunDir: { value: new THREE.Vector3(42, 68, 32).normalize() },
+      uZenithColor: { value: new THREE.Color(0x2f5a92) },
+      uHorizonColor: { value: new THREE.Color(0xd8b480) }
     },
     vertexShader: SKY_VERT,
     fragmentShader: SKY_FRAG,
@@ -1018,7 +1024,9 @@ export function createArenaEnvironment() {
     uniforms: {
       uTime: { value: 0.0 },
       uSunDir: { value: new THREE.Vector3(42, 68, 32).normalize() },
-      uCameraPos: { value: new THREE.Vector3(0, 2.0, 24.0) }
+      uCameraPos: { value: new THREE.Vector3(0, 2.0, 24.0) },
+      uHorizonColor: { value: new THREE.Color(0xd8b480) },
+      uFogDensity: { value: 0.0042 }
     },
     vertexShader: SUEZ_WATER_VERT,
     fragmentShader: SUEZ_WATER_FRAG,

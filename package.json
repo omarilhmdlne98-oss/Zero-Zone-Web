@@ -1,0 +1,10 @@
+{
+  "name": "zero-zone-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix client run build",
+    "test:smoke": "node tests/playwright_smoke.mjs"
+  }
+}

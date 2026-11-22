@@ -14,6 +14,7 @@ import {
   createVaultStructure
 } from './models.js';
 import { UPPER_COMBAT_NETWORK, getSinaiTerrainHeight, sampleCombatSurfaceY } from './bridge_network.js';
+import { TIME_OF_DAY_MODES, computeSinaiAtmosphere, fetchLiveSinaiWeather } from './sinai_weather.js';
 import { NetworkClient } from './network.js';
 
 // --- Global Visible Error Banner (ensures zero silent WebGL or runtime failures) ---
@@ -78,7 +79,8 @@ scene.add(camera);
 // Sky Dome + Warm Sand-Bounce Hemisphere Fill + Crisp Sinai Desert Sunlight
 const skyDome = createSkyDome();
 scene.add(skyDome);
-scene.add(new THREE.HemisphereLight(0xfff3d6, 0xb88b58, 1.35));
+const hemiLight = new THREE.HemisphereLight(0xfff3d6, 0xb88b58, 1.35);
+scene.add(hemiLight);
 
 const sun = new THREE.DirectionalLight(0xfff3d6, 2.0);
 sun.position.set(42, 68, 32);
@@ -100,6 +102,48 @@ scene.add(rimLight);
 // --- 400m x 400m Open-World Sinai Battlefield, Vault, Jump-Pads, Crates & 8 Fuel Barrels ---
 const arenaEnv = createArenaEnvironment();
 scene.add(arenaEnv.group);
+
+let todModeIdx = 0;
+let liveSinaiWeather = null;
+let currentDustSpeedMult = 1.0;
+
+function applySinaiAtmosphere(atmo) {
+  sun.position.copy(atmo.sunPos);
+  sun.color.setHex(atmo.sunColor);
+  sun.intensity = atmo.sunIntensity;
+  hemiLight.color.setHex(atmo.hemiSky);
+  hemiLight.groundColor.setHex(atmo.hemiGround);
+  hemiLight.intensity = atmo.hemiIntensity;
+
+  scene.background.copy(atmo.horizonColor);
+  scene.fog.color.copy(atmo.horizonColor);
+  scene.fog.density = atmo.fogDensity;
+  currentDustSpeedMult = atmo.dustSpeedMult;
+
+  if (skyDome?.userData?.skyMaterial?.uniforms) {
+    const u = skyDome.userData.skyMaterial.uniforms;
+    u.uSunDir.value.copy(atmo.sunDir);
+    u.uZenithColor.value.copy(atmo.zenithColor);
+    u.uHorizonColor.value.copy(atmo.horizonColor);
+  }
+  if (arenaEnv?.waterMaterial?.uniforms) {
+    const wu = arenaEnv.waterMaterial.uniforms;
+    wu.uSunDir.value.copy(atmo.sunDir);
+    wu.uHorizonColor.value.copy(atmo.horizonColor);
+    wu.uFogDensity.value = atmo.fogDensity;
+  }
+
+  const weatherEl = document.getElementById('hud-weather');
+  if (weatherEl) weatherEl.textContent = atmo.label;
+}
+
+applySinaiAtmosphere(computeSinaiAtmosphere(TIME_OF_DAY_MODES[todModeIdx], liveSinaiWeather));
+fetchLiveSinaiWeather().then((data) => {
+  liveSinaiWeather = data;
+  if (TIME_OF_DAY_MODES[todModeIdx] === 'LIVE') {
+    applySinaiAtmosphere(computeSinaiAtmosphere('LIVE', liveSinaiWeather));
+  }
+});
 
 const vault = createVaultStructure();
 scene.add(vault);
@@ -1704,6 +1748,13 @@ function animate() {
     }
     if (act.uav) triggerUavRecon();
     if (act.artillery) triggerArtilleryStrike();
+    if (act.cycleTod) {
+      todModeIdx = (todModeIdx + 1) % TIME_OF_DAY_MODES.length;
+      const nextAtmo = computeSinaiAtmosphere(TIME_OF_DAY_MODES[todModeIdx], liveSinaiWeather);
+      applySinaiAtmosphere(nextAtmo);
+      showTacticalToast(`SINAI ATMOSPHERE // ${nextAtmo.label}`, 2.2);
+      sfx.radioCue();
+    }
 
     if (uavActiveTimer > 0) {
       uavActiveTimer = Math.max(0, uavActiveTimer - dt);
@@ -2044,8 +2095,8 @@ function animate() {
       arenaEnv.waterMaterial.uniforms.uCameraPos.value.copy(camera.position);
     }
     if (arenaEnv.dustPoints) {
-      arenaEnv.dustPoints.position.x = Math.sin(clock.elapsedTime * 0.22) * 3.5;
-      arenaEnv.dustPoints.position.z = Math.cos(clock.elapsedTime * 0.18) * 2.5;
+      arenaEnv.dustPoints.position.x = Math.sin(clock.elapsedTime * 0.22 * currentDustSpeedMult) * 3.5;
+      arenaEnv.dustPoints.position.z = Math.cos(clock.elapsedTime * 0.18 * currentDustSpeedMult) * 2.5;
     }
     if (arenaEnv.smokePlumes?.userData?.smokeAnchors) {
       const { smokeAnchors, smokePhases, smokeParticlesPerPlume } = arenaEnv.smokePlumes.userData;

@@ -179,7 +179,7 @@
       border-color: #38e2ff; color: #e0f7ff; background: rgba(12, 48, 66, 0.92);
       box-shadow: 0 0 14px rgba(56, 226, 255, 0.45); font-weight: 700;
     }
-    #minimap-wrap {
+    #tactical-radar {
       position: absolute; top: 82px; left: 12px; padding: 6px;
       background: rgba(9, 14, 21, 0.82); border: 1px solid rgba(56, 226, 255, 0.35);
       border-radius: 10px; backdrop-filter: blur(4px); box-shadow: 0 8px 24px rgba(0,0,0,0.45);
@@ -192,6 +192,10 @@
     #minimap-status {
       font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.65rem;
       font-weight: 700; letter-spacing: 0.7px; color: #7dd3fc;
+    }
+    #hud-weather {
+      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.62rem;
+      font-weight: 700; letter-spacing: 0.5px; color: #fde68a;
     }
     #tactical-toast {
       position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
@@ -260,9 +264,10 @@
       </div>
     </div>
 
-    <div id="minimap-wrap">
+    <div id="tactical-radar">
       <canvas id="minimap-canvas" width="142" height="142"></canvas>
       <div id="minimap-status">SINAI RADAR // SUEZ SECTOR</div>
+      <div id="hud-weather">SUEZ SIM // 17:30 • 24°C CLEAR</div>
     </div>
     <div id="tactical-toast"></div>
     <div id="kill-feed"></div>
@@ -290,7 +295,7 @@
       <div class="bar-bg"><div class="bar-fill stam-fill" id="hud-stam-bar" style="width:100%"></div></div>
       <div style="font-size:0.74rem;" id="hud-cd-text">Ability [G]: Ready</div>
       <div class="bar-bg"><div class="bar-fill cd-fill" id="hud-cd-bar" style="width:100%"></div></div>
-      <div class="hint">[Q/E] Lean &bull; [C] Crouch &bull; [I] Inspect &bull; [4] UAV &bull; [5] Arty</div>
+      <div class="hint">[Q/E] Lean &bull; [C] Crouch &bull; [I] Inspect &bull; [4] UAV &bull; [5] Arty &bull; [6] Sky</div>
     </div>
 
     <div class="hud-bottom-right">
