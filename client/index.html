@@ -9,28 +9,32 @@
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #070a0f; color: #eef2f6; font-family: system-ui, -apple-system, sans-serif; touch-action: none; }
     #game-canvas { display: block; width: 100vw; height: 100vh; }
 
-    /* Lobby Overlay */
-    #lobby {
-      position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
-      background: radial-gradient(circle at center, rgba(16, 26, 40, 0.88), rgba(7, 10, 15, 0.96));
-      padding: 16px;
+    /* Minimal Click-to-Aim Pill & Optional [Tab] Class Menu */
+    #click-to-play {
+      position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 35;
+      background: rgba(9, 15, 24, 0.86); border: 1px solid rgba(56, 226, 255, 0.5);
+      border-radius: 999px; padding: 8px 18px; font-size: 0.78rem; font-weight: 700;
+      letter-spacing: 0.6px; color: #e0f7ff; pointer-events: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5); transition: opacity 0.18s ease;
     }
-    .lobby-card {
-      width: 100%; max-width: 440px; background: #111822; border: 1px solid #2b3a4f;
-      border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 12px;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.65);
+    #quick-menu {
+      position: fixed; inset: 0; z-index: 45; display: none; place-items: center;
+      background: rgba(7, 10, 15, 0.65); backdrop-filter: blur(4px);
     }
-    .lobby-card h1 { margin: 0; font-size: 1.5rem; letter-spacing: 2px; color: #38e2ff; text-align: center; }
-    .lobby-sub { font-size: 0.76rem; color: #8da2b8; text-align: center; margin-top: -6px; letter-spacing: 0.6px; text-transform: uppercase; }
-    .lobby-card label { font-size: 0.8rem; color: #9fb0c4; display: block; margin-bottom: 4px; }
-    .lobby-card input, .lobby-card select {
-      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2c3b50;
-      background: #0a0f16; color: #f0f4f8; font-size: 0.92rem;
+    .qm-card {
+      width: 100%; max-width: 390px; background: #101722; border: 1px solid rgba(56, 226, 255, 0.35);
+      border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px;
+      box-shadow: 0 18px 44px rgba(0,0,0,0.65); text-align: center;
     }
-    .btn-row { display: flex; gap: 10px; margin-top: 4px; }
-    .btn {
-      flex: 1; padding: 12px; border: none; border-radius: 8px; font-weight: 800; font-size: 0.95rem;
-      letter-spacing: 0.5px; cursor: pointer; background: linear-gradient(135deg, #2be0ff, #1789c7); color: #051018;
+    .qm-card h2 { margin: 0; font-size: 1.05rem; letter-spacing: 1.4px; color: #38e2ff; }
+    .qm-btn {
+      padding: 10px 12px; border-radius: 8px; border: 1px solid #2b3a4f; background: #0a1019;
+      color: #eef2f6; font-weight: 700; font-size: 0.85rem; cursor: pointer; text-align: left;
+    }
+    .qm-btn:hover, .qm-btn.active { border-color: #38e2ff; background: rgba(20, 42, 62, 0.92); color: #fff; }
+    .qm-resume {
+      margin-top: 4px; padding: 10px; border: none; border-radius: 8px; font-weight: 800;
+      cursor: pointer; background: linear-gradient(135deg, #2be0ff, #1789c7); color: #051018;
     }
 
     /* Screen Effects */
@@ -46,7 +50,7 @@
     }
 
     /* HUD */
-    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 20; display: none; }
+    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 20; display: block; }
     .hud-top {
       position: absolute; top: 12px; left: 12px; right: 12px;
       display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
@@ -160,31 +164,15 @@
   <div id="vignette-lowhp"></div>
   <div id="scope-overlay"></div>
 
-  <div id="lobby">
-    <div class="lobby-card">
-      <h1>ZERO-ZONE</h1>
-      <div class="lobby-sub">Tactical Ballistics &bull; Articulated Operators &bull; Solo AI / Multiplayer</div>
-      <div>
-        <label for="kit-select">Operator Class</label>
-        <select id="kit-select">
-          <option value="vanguard">Vanguard — Recon (100 HP / 50 Shd | Tactical Dash)</option>
-          <option value="spectre">Spectre — Stealth (90 HP / 40 Shd | Optical Cloak)</option>
-          <option value="juggernaut">Juggernaut — EOD (150 HP / 100 Shd | Kinetic Barrier)</option>
-        </select>
-      </div>
-      <div>
-        <label for="room-input">Room ID</label>
-        <input id="room-input" value="alpha" />
-      </div>
-      <div>
-        <label for="ws-input">WebSocket Server URL (Optional)</label>
-        <input id="ws-input" value="" placeholder="Leave blank for Solo / AI Bot Arena" />
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="deployBtn" type="button">Deploy to Arena</button>
-      </div>
-      <div class="hint" id="lobby-status">WASD Move &bull; Shift Sprint &bull; C Crouch/Slide &bull; Q/E Lean &bull; RMB ADS &bull; R Reload &bull; G Ability &bull; 1-3 Weapons</div>
-      <div id="deploy-error" style="display:none;color:#f87171;font-size:0.78rem;background:rgba(127,29,29,0.35);border:1px solid #ef4444;border-radius:8px;padding:8px;"></div>
+  <div id="click-to-play">CLICK ARENA TO AIM &amp; PLAY &bull; [F1-F3] Switch Class &bull; [TAB] Loadout</div>
+
+  <div id="quick-menu">
+    <div class="qm-card">
+      <h2>ZERO-ZONE // OPERATOR CLASS</h2>
+      <button class="qm-btn active" id="qm-vanguard" data-kit="vanguard" type="button">[F1] Vanguard — Recon (100 HP / 50 Shd | Tactical Dash)</button>
+      <button class="qm-btn" id="qm-spectre" data-kit="spectre" type="button">[F2] Spectre — Stealth (90 HP / 40 Shd | Optical Cloak)</button>
+      <button class="qm-btn" id="qm-juggernaut" data-kit="juggernaut" type="button">[F3] Juggernaut — EOD (150 HP / 100 Shd | Kinetic Barrier)</button>
+      <button class="qm-resume" id="qm-resume" type="button">Resume Arena</button>
     </div>
   </div>
 

@@ -12,8 +12,11 @@ export class DualControls {
     this.crouchHeld = false;
     this.abilityPressed = false;
     this.reloadPressed = false;
+    this.inspectPressed = false;
     this.breachHeld = false;
     this.weaponSwitch = null;
+    this.classSwitch = null;
+    this.toggleMenuPressed = false;
     this.moveVec = { x: 0, y: 0 };
     this.isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     this._touchWeaponIdx = 0;
@@ -35,10 +38,15 @@ export class DualControls {
       }
       if (e.code === 'KeyG' || e.code === 'KeyX') this.abilityPressed = true;
       if (e.code === 'KeyR') this.reloadPressed = true;
+      if (e.code === 'KeyI' && !e.repeat) this.inspectPressed = true;
       if (e.code === 'KeyF') this.breachHeld = true;
       if (e.code === 'Digit1') this.weaponSwitch = 0;
       if (e.code === 'Digit2') this.weaponSwitch = 1;
       if (e.code === 'Digit3') this.weaponSwitch = 2;
+      if (e.code === 'F1') { e.preventDefault(); this.classSwitch = 'vanguard'; }
+      if (e.code === 'F2') { e.preventDefault(); this.classSwitch = 'spectre'; }
+      if (e.code === 'F3') { e.preventDefault(); this.classSwitch = 'juggernaut'; }
+      if (e.code === 'Tab' && !e.repeat) { e.preventDefault(); this.toggleMenuPressed = true; }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -202,7 +210,9 @@ export class DualControls {
       reload: this.reloadPressed,
       inspect: this.inspectPressed,
       breach: this.breachHeld,
-      weaponSwitch: this.weaponSwitch
+      weaponSwitch: this.weaponSwitch,
+      classSwitch: this.classSwitch,
+      toggleMenu: this.toggleMenuPressed
     };
     this.firePressed = false;
     this.jumpPressed = false;
@@ -211,6 +221,8 @@ export class DualControls {
     this.reloadPressed = false;
     this.inspectPressed = false;
     this.weaponSwitch = null;
+    this.classSwitch = null;
+    this.toggleMenuPressed = false;
     return out;
   }
 }

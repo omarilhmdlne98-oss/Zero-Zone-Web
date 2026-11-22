@@ -1399,74 +1399,90 @@ function animate() {
   composer.render();
 }
 
-// --- Lobby Startup (Non-Blocking Instant Deploy + Error Fallback) ---
+// --- Direct Auto-Launch & Quick In-Game Class Switch ([F1-F3] / [Tab]) ---
 const DEFAULT_WS_URL = (import.meta.env.VITE_WS_URL || '').trim();
-const wsInputEl = document.getElementById('ws-input');
-if (wsInputEl) wsInputEl.value = DEFAULT_WS_URL;
+let quickMenuOpen = false;
 
-const deployBtn = document.getElementById('deployBtn') || document.getElementById('btn-play');
-let isDeploying = false;
+function requestSafePointerLock() {
+  if (controls.isTouch || document.pointerLockElement === canvas) return;
+  try {
+    const req = canvas.requestPointerLock?.();
+    if (req && typeof req.catch === 'function') req.catch(() => {});
+  } catch {}
+}
 
-deployBtn?.addEventListener('click', async () => {
-  if (isDeploying) return;
-  isDeploying = true;
+function updateClickToPlayHint() {
+  const pill = document.getElementById('click-to-play');
+  if (!pill) return;
+  const locked = document.pointerLockElement === canvas;
+  pill.style.opacity = (locked || quickMenuOpen || controls.isTouch) ? '0' : '1';
+}
 
-  const statusEl = document.getElementById('lobby-status');
-  const errEl = document.getElementById('deploy-error');
-  if (errEl) errEl.style.display = 'none';
-  deployBtn.disabled = true;
-  deployBtn.textContent = 'Initializing Physics & Arena...';
-  if (statusEl) statusEl.textContent = 'Initializing Physics & Arena...';
+function switchOperatorClass(kitId) {
+  const stats = OPERATOR_STATS[kitId];
+  if (!stats) return;
+  localState.kit = kitId;
+  localState.maxHp = stats.maxHp;
+  localState.hp = stats.maxHp;
+  localState.maxShield = stats.maxShield;
+  localState.shield = stats.maxShield;
+  localState.abilityCd = 0;
+  localState.cloakTimer = 0;
+  localState.barrierTimer = 0;
 
-  // Request pointer lock safely during the user gesture without ever rejecting or freezing the UI
-  if (!controls.isTouch) {
-    try {
-      const lockPromise = canvas.requestPointerLock?.();
-      if (lockPromise && typeof lockPromise.catch === 'function') {
-        lockPromise.catch(() => {});
-      }
-    } catch {}
+  for (const k of ['vanguard', 'spectre', 'juggernaut']) {
+    const btn = document.getElementById(`qm-${k}`);
+    if (btn) btn.classList.toggle('active', k === kitId);
   }
+  updateLocalHudBanner();
+  try { sfx.radioCue(); } catch {}
+}
 
-  // Yield one animation frame so the browser immediately paints the loading state
-  await new Promise((resolve) => requestAnimationFrame(resolve));
+function toggleQuickMenu(forceState = null) {
+  quickMenuOpen = forceState !== null ? forceState : !quickMenuOpen;
+  const qm = document.getElementById('quick-menu');
+  if (qm) qm.style.display = quickMenuOpen ? 'grid' : 'none';
+  if (quickMenuOpen && document.pointerLockElement === canvas) {
+    try { document.exitPointerLock?.(); } catch {}
+  } else if (!quickMenuOpen) {
+    requestSafePointerLock();
+  }
+  updateClickToPlayHint();
+}
+
+for (const k of ['vanguard', 'spectre', 'juggernaut']) {
+  document.getElementById(`qm-${k}`)?.addEventListener('click', () => {
+    switchOperatorClass(k);
+    toggleQuickMenu(false);
+  });
+}
+document.getElementById('qm-resume')?.addEventListener('click', () => toggleQuickMenu(false));
+document.addEventListener('pointerlockchange', updateClickToPlayHint);
+
+async function autoLaunchArena() {
+  const kit = 'vanguard';
+  const room = 'alpha';
+  currentRoomName = room;
 
   try {
-    const kit = document.getElementById('kit-select')?.value || 'vanguard';
-    const room = document.getElementById('room-input')?.value.trim() || 'alpha';
-    currentRoomName = room;
-    const wsUrl = (wsInputEl?.value || '').trim() || DEFAULT_WS_URL;
-
     await initPhysics(kit);
-
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('hud').style.display = 'block';
-    document.getElementById('hud-room').textContent = wsUrl ? `Room: ${room}` : 'Solo AI Arena | KOs: 0';
-
     net = new NetworkClient(
       handleNetMessage,
-      (st) => {
-        if (statusEl) statusEl.textContent = st;
-      },
+      () => {},
       () => {
         enableLocalArenaMode();
       }
     );
-    net.connect(wsUrl, room, kit);
-    try { sfx.radioCue(); } catch {}
+    net.connect(DEFAULT_WS_URL, room, kit);
     running = true;
+    updateClickToPlayHint();
   } catch (err) {
-    console.error('[Zero-Zone] Deploy failed:', err);
-    isDeploying = false;
-    deployBtn.disabled = false;
-    deployBtn.textContent = 'Deploy to Arena';
-    if (errEl) {
-      errEl.textContent = `Launch error: ${err?.message || 'Unexpected initialization error'}. Please try again.`;
-      errEl.style.display = 'block';
-    }
-    if (statusEl) statusEl.textContent = 'Initialization error — click Deploy to retry.';
+    console.error('[Zero-Zone] Auto-launch error:', err);
+    showArenaError(`Arena init notice: ${err?.message || 'Fallback active'}`);
+    enableLocalArenaMode();
+    running = true;
   }
-});
+}
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -1476,3 +1492,4 @@ window.addEventListener('resize', () => {
 });
 
 animate();
+autoLaunchArena();
