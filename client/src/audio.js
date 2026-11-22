@@ -145,6 +145,14 @@ class SoundFX {
     this._noise(0.24, 'lowpass', 620, 0.22);
     this._tone(150, 46, 0.22, 'square', 0.14);
   }
+
+  explosion() {
+    // Deep sub-bass detonation + roaring low-pass fireball rumble + debris crackle
+    this._tone(110, 26, 0.55, 'sine', 0.32);
+    this._tone(78, 22, 0.65, 'triangle', 0.24, 0.02);
+    this._noise(0.55, 'lowpass', 520, 0.34, 0.0, 0.65);
+    this._noise(0.32, 'bandpass', 1450, 0.14, 0.06, 1.1);
+  }
 }
 
 export const sfx = new SoundFX();

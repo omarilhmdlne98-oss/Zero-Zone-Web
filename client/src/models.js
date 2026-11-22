@@ -165,6 +165,7 @@ export function createWeaponMesh(weaponId = 'rifle') {
   const accentMat = new THREE.MeshStandardMaterial({ color: accentHex, emissive: accentHex, emissiveIntensity: 2.2 });
 
   let muzzleZ = -0.68;
+  let laserBeam = null;
 
   if (weaponId === 'railgun') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.13, 0.56), gunmetal);
@@ -175,17 +176,23 @@ export function createWeaponMesh(weaponId = 'rifle') {
     railBot.position.set(0, -0.025, -0.58);
     const plasmaCore = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.028, 0.58), accentMat);
     plasmaCore.position.set(0, 0.01, -0.56);
-    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.28, 12), darkPolymer);
-    scope.rotation.x = Math.PI / 2;
-    scope.position.set(0, 0.105, -0.18);
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.022, 12), accentMat);
-    lens.position.set(0, 0.105, -0.039);
+    // Digital Rail Scope Assembly + Glowing Ocular Lens
+    const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.034, 0.32, 12), darkPolymer);
+    scopeTube.rotation.x = Math.PI / 2;
+    scopeTube.position.set(0, 0.105, -0.18);
+    const scopeRingF = new THREE.Mesh(new THREE.TorusGeometry(0.031, 0.005, 6, 12), gunmetal);
+    scopeRingF.position.set(0, 0.105, -0.32);
+    const scopeLensMat = new THREE.MeshBasicMaterial({ color: 0xd8b4fe, transparent: true, opacity: 0.78 });
+    const lensRear = new THREE.Mesh(new THREE.CircleGeometry(0.024, 12), scopeLensMat);
+    lensRear.position.set(0, 0.105, -0.018);
+    const lensDot = new THREE.Mesh(new THREE.CircleGeometry(0.005, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+    lensDot.position.set(0, 0.105, -0.016);
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.12, 0.26), darkPolymer);
     stock.position.set(0, -0.02, 0.24);
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.13, 0.07), darkPolymer);
     grip.position.set(0, -0.1, 0.04);
     grip.rotation.x = 0.28;
-    gun.add(body, railTop, railBot, plasmaCore, scope, lens, stock, grip);
+    gun.add(body, railTop, railBot, plasmaCore, scopeTube, scopeRingF, lensRear, lensDot, stock, grip);
     muzzleZ = -0.92;
   } else if (weaponId === 'shotgun') {
     const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.36), gunmetal);
@@ -202,7 +209,24 @@ export function createWeaponMesh(weaponId = 'rifle') {
     sight.position.set(0, 0.075, -0.12);
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.11, 0.26), darkPolymer);
     stock.position.set(0, -0.03, 0.2);
-    gun.add(receiver, barrel, magTube, pump, sight, stock);
+
+    // Side-Mounted Green Tactical Laser Module + Emissive Beam
+    const laserBox = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.032, 0.11), darkPolymer);
+    laserBox.position.set(0.056, 0.018, -0.46);
+    const laserEmitterMat = new THREE.MeshBasicMaterial({ color: 0x22ff66 });
+    const laserEmitter = new THREE.Mesh(new THREE.CircleGeometry(0.008, 8), laserEmitterMat);
+    laserEmitter.rotation.y = Math.PI;
+    laserEmitter.position.set(0.056, 0.018, -0.517);
+
+    const beamGeo = new THREE.CylinderGeometry(0.0035, 0.0035, 16.0, 5);
+    beamGeo.rotateX(Math.PI / 2);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x22ff66, transparent: true, opacity: 0.48, depthWrite: false });
+    laserBeam = new THREE.Mesh(beamGeo, beamMat);
+    laserBeam.position.set(0.056, 0.018, -8.52);
+    laserBeam.castShadow = false;
+    laserBeam.receiveShadow = false;
+
+    gun.add(receiver, barrel, magTube, pump, sight, stock, laserBox, laserEmitter, laserBeam);
     muzzleZ = -0.76;
   } else {
     // VX-47 Assault Rifle
@@ -221,14 +245,28 @@ export function createWeaponMesh(weaponId = 'rifle') {
     grip.rotation.x = 0.3;
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.11, 0.24), darkPolymer);
     stock.position.set(0, -0.015, 0.18);
-    // Holographic Reflex Sight
-    const opticHousing = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.056, 0.11), gunmetal);
-    opticHousing.position.set(0, 0.085, -0.12);
-    const reticleDot = new THREE.Mesh(new THREE.SphereGeometry(0.007, 8, 8), accentMat);
-    reticleDot.position.set(0, 0.088, -0.12);
+
+    // Open-Window Holographic Red-Dot Sight
+    const holoBase = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.018, 0.11), gunmetal);
+    holoBase.position.set(0, 0.066, -0.12);
+    const holoLeft = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.048, 0.095), gunmetal);
+    holoLeft.position.set(-0.024, 0.095, -0.12);
+    const holoRight = holoLeft.clone();
+    holoRight.position.x = 0.024;
+    const holoTop = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.008, 0.095), gunmetal);
+    holoTop.position.set(0, 0.118, -0.12);
+    const holoGlass = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.042, 0.038),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false })
+    );
+    holoGlass.position.set(0, 0.095, -0.12);
+    const redDotMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+    const redDot = new THREE.Mesh(new THREE.SphereGeometry(0.0038, 8, 8), redDotMat);
+    redDot.position.set(0, 0.095, -0.118);
     const railGlow = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.012, 0.24), accentMat);
     railGlow.position.set(0, 0.052, -0.44);
-    gun.add(receiver, handguard, barrel, mag, grip, stock, opticHousing, reticleDot, railGlow);
+
+    gun.add(receiver, handguard, barrel, mag, grip, stock, holoBase, holoLeft, holoRight, holoTop, holoGlass, redDot, railGlow);
     muzzleZ = -0.78;
   }
 
@@ -238,6 +276,7 @@ export function createWeaponMesh(weaponId = 'rifle') {
   flashMesh.rotation.x = -Math.PI / 2;
   flashMesh.position.set(0, 0.018, muzzleZ - 0.12);
   flashMesh.visible = false;
+  flashMesh.castShadow = false;
   gun.add(flashMesh);
 
   const flashLight = new THREE.PointLight(accentHex, 0, 7);
@@ -246,6 +285,7 @@ export function createWeaponMesh(weaponId = 'rifle') {
 
   gun.userData.flashMesh = flashMesh;
   gun.userData.flashLight = flashLight;
+  gun.userData.laserBeam = laserBeam;
   gun.userData.muzzleZ = muzzleZ;
   return gun;
 }
@@ -283,6 +323,7 @@ export function createFirstPersonViewmodel(weaponId = 'rifle') {
   vm.userData.weapon = weapon;
   vm.userData.flashMesh = weapon.userData.flashMesh;
   vm.userData.flashLight = weapon.userData.flashLight;
+  vm.userData.laserBeam = weapon.userData.laserBeam;
   return vm;
 }
 
@@ -768,5 +809,38 @@ export function createDestructibleCrate(id, x, z) {
   band.userData.crateId = id;
 
   group.add(body, band);
+  return group;
+}
+
+export function createExplosiveBarrel(id, x, y, z) {
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+  group.userData.barrelId = id;
+
+  const redDrumMat = new THREE.MeshStandardMaterial({ color: 0xc81e1e, roughness: 0.42, metalness: 0.55 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0x262c35, roughness: 0.35, metalness: 0.78 });
+  const hazardMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(2, 1), roughness: 0.5, metalness: 0.25 });
+
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.24, 12), redDrumMat);
+  drum.position.y = 0.62;
+  drum.castShadow = false;
+  drum.receiveShadow = true;
+  drum.userData.barrelId = id;
+
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.435, 0.435, 0.24, 12), hazardMat);
+  band.position.y = 0.68;
+  band.castShadow = false;
+  band.userData.barrelId = id;
+
+  const topRim = new THREE.Mesh(new THREE.TorusGeometry(0.41, 0.035, 6, 12), rimMat);
+  topRim.rotation.x = Math.PI / 2;
+  topRim.position.y = 1.22;
+  topRim.userData.barrelId = id;
+
+  const botRim = topRim.clone();
+  botRim.position.y = 0.04;
+  botRim.userData.barrelId = id;
+
+  group.add(drum, band, topRim, botRim);
   return group;
 }

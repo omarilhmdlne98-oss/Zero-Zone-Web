@@ -7,6 +7,7 @@ import {
   animateOperatorRig,
   createArenaEnvironment,
   createDestructibleCrate,
+  createExplosiveBarrel,
   createFirstPersonViewmodel,
   createJumpPad,
   createOperatorModel,
@@ -16,15 +17,15 @@ import {
 import { UPPER_COMBAT_NETWORK, sampleCombatSurfaceY } from './bridge_network.js';
 import { NetworkClient } from './network.js';
 
-// --- Renderer & Cinematic ACES Filmic Lighting ---
+// --- Renderer & Cinematic ACES Filmic Lighting (2GB VRAM Optimized) ---
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b1220);
@@ -35,7 +36,7 @@ scene.add(camera);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new EffectPass(camera, new BloomEffect({ intensity: 0.45, luminanceThreshold: 0.82 })));
+composer.addPass(new EffectPass(camera, new BloomEffect({ intensity: 0.4, luminanceThreshold: 0.85, resolutionScale: 0.5 })));
 
 // Sky Dome + Sun + Hemisphere Fill + Tactical Rim Light
 scene.add(createSkyDome());
@@ -44,7 +45,7 @@ scene.add(new THREE.HemisphereLight(0x88b4e6, 0x262328, 0.85));
 const sun = new THREE.DirectionalLight(0xffdfb8, 2.0);
 sun.position.set(22, 34, 18);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.near = 4;
 sun.shadow.camera.far = 90;
 sun.shadow.camera.left = -28;
@@ -58,7 +59,7 @@ const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
 rimLight.position.set(-20, 14, -22);
 scene.add(rimLight);
 
-// --- Arena Environment, Vault, Jump-Pads & Crates ---
+// --- Arena Environment, Vault, Jump-Pads, Crates & 8 Explosive Fuel Barrels ---
 const arenaEnv = createArenaEnvironment();
 scene.add(arenaEnv.group);
 
@@ -75,6 +76,21 @@ const crateDefs = [
   { id: 'crate_se', x: 6.5, z: 6.5 }
 ];
 const crates = new Map();
+
+const UPPER_DECK_Y = UPPER_COMBAT_NETWORK.upper_deck_y;
+const barrelDefs = [
+  // 4 Ground-level choke-point fuel barrels
+  { id: 'barrel_g_nw', x: -7.5, y: 0, z: -11.5 },
+  { id: 'barrel_g_ne', x: 7.5, y: 0, z: -11.5 },
+  { id: 'barrel_g_sw', x: -7.5, y: 0, z: 11.5 },
+  { id: 'barrel_g_se', x: 7.5, y: 0, z: 11.5 },
+  // 4 Upper catwalk / bridge choke-point fuel barrels (y = 4.2m)
+  { id: 'barrel_u_w', x: -19.5, y: UPPER_DECK_Y, z: -9.0 },
+  { id: 'barrel_u_e', x: 19.5, y: UPPER_DECK_Y, z: 9.0 },
+  { id: 'barrel_u_n', x: 0, y: UPPER_DECK_Y, z: -16.2 },
+  { id: 'barrel_u_s', x: 0, y: UPPER_DECK_Y, z: 16.2 }
+];
+const barrels = new Map();
 
 // --- Operator Class Configs ---
 const OPERATOR_STATS = {
@@ -170,11 +186,15 @@ let weaponAmmo = WEAPONS.map((w) => ({ mag: w.magSize, reserve: w.maxReserve }))
 let fireCooldown = 0;
 let reloadTimer = 0;
 let isReloading = false;
+let isInspecting = false;
+let inspectPhase = 0;
 
 let recoilKickBack = 0;
 let recoilKickPitch = 0;
 let muzzleFlashTimer = 0;
 let hitmarkerTimer = 0;
+let damageIndicatorTimer = 0;
+const damageSourcePos = new THREE.Vector3();
 let stepAccum = 0;
 let heartbeatAccum = 0;
 let bobPhase = 0;
@@ -305,18 +325,92 @@ function renderKillFeed() {
     .join('');
 }
 
-// --- True Ballistic Projectile Spawner ---
-function spawnBallisticProjectile(origin, dir, weapon, ownerType, ownerId, ownerName) {
-  const geo = new THREE.CylinderGeometry(0.018, 0.018, 1.35, 6);
-  geo.rotateX(Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({ color: weapon.tracerColor });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.copy(origin);
-  mesh.lookAt(origin.clone().add(dir));
+// --- Lightweight Object-Pooled Bullet Tracer System (2GB VRAM Zero-Alloc Pool) ---
+const TRACER_POOL_SIZE = 32;
+const sharedTracerGeo = new THREE.CylinderGeometry(0.017, 0.017, 1.55, 5);
+sharedTracerGeo.rotateX(Math.PI / 2);
+const tracerPool = [];
+for (let i = 0; i < TRACER_POOL_SIZE; i++) {
+  const mesh = new THREE.Mesh(
+    sharedTracerGeo,
+    new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.92 })
+  );
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.visible = false;
+  mesh.frustumCulled = false;
   scene.add(mesh);
+  tracerPool.push(mesh);
+}
+
+function acquireTracerMesh(colorHex) {
+  const mesh = tracerPool.pop();
+  if (!mesh) return null;
+  mesh.material.color.setHex(colorHex);
+  mesh.visible = true;
+  return mesh;
+}
+
+function releaseTracerMesh(mesh) {
+  if (!mesh) return;
+  mesh.visible = false;
+  tracerPool.push(mesh);
+}
+
+function triggerDirectionalDamage(sourcePos) {
+  if (!sourcePos) return;
+  damageSourcePos.copy(sourcePos);
+  damageIndicatorTimer = 1.15;
+}
+
+const sharedFireGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+const sharedSmokeGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
+const firePalette = [0xff5500, 0xffaa00, 0xef4444];
+const smokeMat = new THREE.MeshBasicMaterial({ color: 0x272b33, transparent: true, opacity: 0.7 });
+
+function spawnExplosionFX(center) {
+  // Lightweight fireball cubes (castShadow = false)
+  for (let i = 0; i < 14; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: firePalette[i % firePalette.length] });
+    const m = new THREE.Mesh(sharedFireGeo, mat);
+    m.castShadow = false;
+    m.receiveShadow = false;
+    m.position.copy(center).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.5, (Math.random() - 0.5) * 0.6));
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 11,
+      3.5 + Math.random() * 7.5,
+      (Math.random() - 0.5) * 11
+    );
+    scene.add(m);
+    particles.push({ mesh: m, vel, life: 0.35 + Math.random() * 0.28, gravity: 11 });
+  }
+  // Rising dark smoke puffs (castShadow = false)
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.Mesh(sharedSmokeGeo, smokeMat);
+    m.castShadow = false;
+    m.receiveShadow = false;
+    m.position.copy(center).add(new THREE.Vector3((Math.random() - 0.5) * 1.1, 0.7 + Math.random() * 0.6, (Math.random() - 0.5) * 1.1));
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 3.2,
+      2.6 + Math.random() * 2.4,
+      (Math.random() - 0.5) * 3.2
+    );
+    scene.add(m);
+    particles.push({ mesh: m, vel, life: 0.75 + Math.random() * 0.45, gravity: -1.4 });
+  }
+}
+
+// --- True Ballistic Projectile Spawner (Uses Pooled Tracer Meshes) ---
+function spawnBallisticProjectile(origin, dir, weapon, ownerType, ownerId, ownerName) {
+  const mesh = acquireTracerMesh(weapon.tracerColor);
+  if (mesh) {
+    mesh.position.copy(origin);
+    mesh.lookAt(origin.clone().add(dir));
+  }
 
   projectiles.push({
     mesh,
+    origin: origin.clone(),
     pos: origin.clone(),
     vel: dir.clone().multiplyScalar(weapon.muzzleVelocity),
     gravity: weapon.gravity,
@@ -387,11 +481,23 @@ function updateHUD() {
     const spreadPx = localState.ads ? 10 : (localState.crouching ? 18 : 24 + recoilKickBack * 90);
     ch.style.width = `${spreadPx}px`;
     ch.style.height = `${spreadPx}px`;
-    ch.style.opacity = localState.ads && wpn.id === 'railgun' ? '0.45' : '1';
+    ch.style.opacity = localState.ads ? (wpn.id === 'railgun' ? '0.2' : wpn.id === 'rifle' ? '0.45' : '0.8') : '1';
   }
   const scopeEl = document.getElementById('scope-overlay');
   if (scopeEl) {
     scopeEl.style.opacity = localState.ads && wpn.id === 'railgun' ? '1' : '0';
+  }
+
+  // Weapon Inspection Telemetry Panel ([I])
+  const inspectEl = document.getElementById('weapon-inspect-panel');
+  if (inspectEl) {
+    if (isInspecting) {
+      const opticLabel = wpn.id === 'rifle' ? 'Holographic Red-Dot' : wpn.id === 'railgun' ? 'Digital Rail Scope' : 'Green Tactical Laser';
+      inspectEl.innerHTML = `<div class="wi-title">${wpn.name} // ${opticLabel}</div>DMG ${wpn.damage} (2.2x HEAD) &bull; VEL ${wpn.muzzleVelocity} m/s &bull; MAG ${wpn.magSize}`;
+      inspectEl.style.opacity = '1';
+    } else {
+      inspectEl.style.opacity = '0';
+    }
   }
 
   // Low HP Vignette
@@ -545,8 +651,9 @@ function findNearestCoverPoint(botPos, threatPos) {
   return best || new THREE.Vector3(-12, 0, -7);
 }
 
-function applyDamageToLocalPlayer(rawDmg, attackerName, weaponName, isHeadshot = false) {
+function applyDamageToLocalPlayer(rawDmg, attackerName, weaponName, isHeadshot = false, sourcePos = null) {
   if (!localState.alive) return;
+  if (sourcePos) triggerDirectionalDamage(sourcePos);
   const stats = OPERATOR_STATS[localState.kit];
   const bonusRed = localState.barrierTimer > 0 ? 0.55 : 0;
   let dmg = rawDmg * (1 - Math.min(0.85, stats.dmgRed + bonusRed));
@@ -605,6 +712,68 @@ function applyDamageToBot(bot, rawDmg, hitZone, attackerName, weaponName) {
   }
 }
 
+function detonateBarrel(barrel, attackerName = 'You') {
+  if (!barrel || barrel.exploded) return;
+  barrel.exploded = true;
+  barrel.hp = 0;
+  barrel.respawnTimer = 25.0;
+  barrel.mesh.visible = false;
+  barrel.collider?.setEnabled(false);
+
+  const center = new THREE.Vector3(barrel.def.x, barrel.def.y + 0.62, barrel.def.z);
+  sfx.explosion();
+  spawnExplosionFX(center);
+  alertBotsToGunshot(center);
+
+  const blastRadius = 6.5;
+  const maxSplashDmg = 120;
+
+  // Radial splash damage to AI bots
+  for (const bot of localBots) {
+    if (!bot.alive) continue;
+    const botCenter = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+    const dist = botCenter.distanceTo(center);
+    if (dist <= blastRadius) {
+      const falloff = 1 - (dist / blastRadius) * 0.72;
+      const splashDmg = maxSplashDmg * falloff;
+      applyDamageToBot(bot, splashDmg, 'torso', attackerName, 'Explosive Barrel');
+    }
+  }
+
+  // Radial splash damage to local player (with directional damage arc)
+  if (localState.alive && playerBody) {
+    const p = playerBody.translation();
+    const playerPos = new THREE.Vector3(p.x, p.y, p.z);
+    const dist = playerPos.distanceTo(center);
+    if (dist <= blastRadius) {
+      const falloff = 1 - (dist / blastRadius) * 0.72;
+      applyDamageToLocalPlayer(maxSplashDmg * 0.75 * falloff, attackerName, 'Explosive Barrel', false, center);
+    }
+  }
+
+  // Damage nearby destructible crates
+  for (const cr of crates.values()) {
+    if (!cr.mesh.visible) continue;
+    if (cr.mesh.position.distanceTo(center) <= blastRadius) {
+      cr.hp -= 85;
+      if (cr.hp <= 0) {
+        cr.mesh.visible = false;
+        cr.collider?.setEnabled(false);
+        sfx.crateBreak();
+      }
+    }
+  }
+
+  // Chain-detonate adjacent fuel barrels within 5.5m
+  for (const other of barrels.values()) {
+    if (other === barrel || other.exploded) continue;
+    const otherCenter = new THREE.Vector3(other.def.x, other.def.y + 0.62, other.def.z);
+    if (otherCenter.distanceTo(center) <= 5.5) {
+      setTimeout(() => detonateBarrel(other, attackerName), 120);
+    }
+  }
+}
+
 function resetLocalArenaMatch() {
   localMatchResetting = false;
   localState.matchRemaining = 300;
@@ -621,6 +790,13 @@ function resetLocalArenaMatch() {
     cr.hp = 100;
     cr.mesh.visible = true;
     cr.collider?.setEnabled(true);
+  }
+  for (const b of barrels.values()) {
+    b.hp = 40;
+    b.exploded = false;
+    b.respawnTimer = 0;
+    b.mesh.visible = true;
+    b.collider?.setEnabled(true);
   }
   spawnLocalBots();
   updateLocalHudBanner();
@@ -723,29 +899,90 @@ function handleNetMessage(msg) {
   }
 }
 
-// --- Rapier3D Physics Init (1.80m Human Capsule + Multi-Tier Arena Colliders) ---
+// --- Lightweight Kinematic Fallback (guarantees playable arena even if WASM physics fails) ---
+function createFallbackPhysics() {
+  const pos = { x: 0, y: 1.4, z: 14 };
+  const vel = { x: 0, y: 0, z: 0 };
+  const body = {
+    translation: () => ({ ...pos }),
+    linvel: () => ({ ...vel }),
+    setTranslation: (t) => { pos.x = t.x; pos.y = t.y; pos.z = t.z; },
+    setLinvel: (v) => { vel.x = v.x; vel.y = v.y; vel.z = v.z; }
+  };
+  const fallbackWorld = {
+    step: () => {
+      const dtStep = 1 / 60;
+      vel.y -= 18.5 * dtStep;
+      pos.x = THREE.MathUtils.clamp(pos.x + vel.x * dtStep, -22.5, 22.5);
+      pos.z = THREE.MathUtils.clamp(pos.z + vel.z * dtStep, -22.5, 22.5);
+      const floorY = sampleCombatSurfaceY(pos.x, pos.z, pos.y - 0.9) + 0.9;
+      pos.y += vel.y * dtStep;
+      if (pos.y < floorY) {
+        pos.y = floorY;
+        if (vel.y < 0) vel.y = 0;
+      }
+    }
+  };
+  return { world: fallbackWorld, playerBody: body };
+}
+
+// --- Rapier3D Physics Init (1.80m Human Capsule + Multi-Tier Arena Colliders + 8 Fuel Barrels) ---
 async function initPhysics(kitId) {
-  await RAPIER.init();
-  world = new RAPIER.World({ x: 0, y: -18.5, z: 0 });
+  let useRapier = true;
+  try {
+    await RAPIER.init();
+    world = new RAPIER.World({ x: 0, y: -18.5, z: 0 });
+  } catch (err) {
+    console.warn('[Zero-Zone] RAPIER init failed, activating kinematic fallback:', err);
+    useRapier = false;
+    const fb = createFallbackPhysics();
+    world = fb.world;
+    playerBody = fb.playerBody;
+  }
 
-  const floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(24, 0.5, 24), floorBody);
+  if (useRapier) {
+    const floorBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(24, 0.5, 24), floorBody);
 
-  const vaultBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 2.3, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(2.15, 2.3, 2.15), vaultBody);
+    const vaultBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 2.3, 0));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(2.15, 2.3, 2.15), vaultBody);
 
-  // Register every multi-tier arena wall, catwalk, stair step, and jersey barrier collider
-  for (const col of arenaEnv.colliders) {
-    const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(col.x, col.y, col.z));
-    world.createCollider(RAPIER.ColliderDesc.cuboid(col.hx, col.hy, col.hz), b);
+    // Register every multi-tier arena wall, catwalk, cross-bridge, inclined ramp, and barrier collider
+    const tmpQuat = new THREE.Quaternion();
+    const tmpEuler = new THREE.Euler();
+    for (const col of arenaEnv.colliders) {
+      const rbDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(col.x, col.y, col.z);
+      if (col.rx || col.rz) {
+        tmpEuler.set(col.rx || 0, 0, col.rz || 0);
+        tmpQuat.setFromEuler(tmpEuler);
+        rbDesc.setRotation({ x: tmpQuat.x, y: tmpQuat.y, z: tmpQuat.z, w: tmpQuat.w });
+      }
+      const b = world.createRigidBody(rbDesc);
+      world.createCollider(RAPIER.ColliderDesc.cuboid(col.hx, col.hy, col.hz), b);
+    }
   }
 
   for (const def of crateDefs) {
     const mesh = createDestructibleCrate(def.id, def.x, def.z);
     scene.add(mesh);
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(def.x, 0.75, def.z));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(0.9, 0.75, 0.9), body);
+    let collider = null;
+    if (useRapier) {
+      const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(def.x, 0.75, def.z));
+      collider = world.createCollider(RAPIER.ColliderDesc.cuboid(0.9, 0.75, 0.9), body);
+    }
     crates.set(def.id, { mesh, collider, hp: 100 });
+  }
+
+  // Spawn 8 Destructible Explosive Red Fuel Barrels (4 ground + 4 upper catwalk choke points)
+  for (const def of barrelDefs) {
+    const mesh = createExplosiveBarrel(def.id, def.x, def.y, def.z);
+    scene.add(mesh);
+    let collider = null;
+    if (useRapier) {
+      const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(def.x, def.y + 0.62, def.z));
+      collider = world.createCollider(RAPIER.ColliderDesc.cylinder(0.62, 0.43), body);
+    }
+    barrels.set(def.id, { id: def.id, def, mesh, collider, hp: 40, exploded: false, respawnTimer: 0 });
   }
 
   const stats = OPERATOR_STATS[kitId] || OPERATOR_STATS.vanguard;
@@ -755,11 +992,13 @@ async function initPhysics(kitId) {
   localState.maxShield = stats.maxShield;
   localState.shield = stats.maxShield;
 
-  // 1.80m human capsule: halfHeight=0.56 + radius=0.34 => total 1.80m
-  playerBody = world.createRigidBody(
-    RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 1.4, 14).lockRotations()
-  );
-  world.createCollider(RAPIER.ColliderDesc.capsule(0.56, 0.34), playerBody);
+  if (useRapier) {
+    // 1.80m human capsule: halfHeight=0.56 + radius=0.34 => total 1.80m
+    playerBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 1.4, 14).lockRotations()
+    );
+    world.createCollider(RAPIER.ColliderDesc.capsule(0.56, 0.34), playerBody);
+  }
 
   rebuildViewmodel(WEAPONS[currentWeaponIdx].id);
 }
@@ -772,6 +1011,7 @@ let netSyncAccum = 0;
 function updateProjectiles(dt, pNew) {
   const envObjects = [arenaEnv.group, vault];
   const activeCrates = Array.from(crates.values()).filter((c) => c.mesh.visible).map((c) => c.mesh);
+  const activeBarrels = Array.from(barrels.values()).filter((b) => !b.exploded && b.mesh.visible).map((b) => b.mesh);
   const remoteMeshes = Array.from(remotePlayers.values()).filter((r) => r.alive).map((r) => r.mesh);
   const botMeshes = localBots.filter((b) => b.alive).map((b) => b.mesh);
 
@@ -779,7 +1019,7 @@ function updateProjectiles(dt, pNew) {
     const pr = projectiles[i];
     pr.life -= dt;
     if (pr.life <= 0) {
-      scene.remove(pr.mesh);
+      releaseTracerMesh(pr.mesh);
       projectiles.splice(i, 1);
       continue;
     }
@@ -797,15 +1037,15 @@ function updateProjectiles(dt, pNew) {
       const distToLine = new THREE.Line3(prevPos, nextPos).closestPointToPoint(playerCenter, true, new THREE.Vector3()).distanceTo(playerCenter);
       if (distToLine < 0.52) {
         const isHead = nextPos.y > pNew.y + 0.42;
-        applyDamageToLocalPlayer(pr.damage * (isHead ? 1.4 : 0.45), pr.ownerName, pr.weaponName, isHead);
-        scene.remove(pr.mesh);
+        applyDamageToLocalPlayer(pr.damage * (isHead ? 1.4 : 0.45), pr.ownerName, pr.weaponName, isHead, pr.origin);
+        releaseTracerMesh(pr.mesh);
         projectiles.splice(i, 1);
         continue;
       }
     }
 
-    // Raycast this ballistic segment against bots, remote players, crates, and arena geometry
-    const targets = [...envObjects, ...activeCrates];
+    // Raycast this ballistic segment against bots, remote players, barrels, crates, and arena geometry
+    const targets = [...envObjects, ...activeCrates, ...activeBarrels];
     if (pr.ownerType === 'local') {
       targets.push(...remoteMeshes, ...botMeshes);
     } else if (pr.ownerType === 'bot') {
@@ -844,6 +1084,16 @@ function updateProjectiles(dt, pNew) {
           spawnImpactFX(hit.point, hitNorm, true);
           applyDamageToBot(bot, pr.damage, hitZone, pr.ownerName, pr.weaponName);
         }
+      } else if (obj.userData.barrelId) {
+        if (pr.ownerType === 'local') { sfx.hit(); showHitmarker(false); }
+        spawnImpactFX(hit.point, hitNorm, true);
+        const barrel = barrels.get(obj.userData.barrelId);
+        if (barrel && !barrel.exploded) {
+          barrel.hp -= pr.damage;
+          if (barrel.hp <= 0) {
+            detonateBarrel(barrel, pr.ownerName || 'You');
+          }
+        }
       } else if (obj.userData.crateId) {
         if (pr.ownerType === 'local') { sfx.hit(); showHitmarker(false); }
         spawnImpactFX(hit.point, hitNorm, false);
@@ -865,14 +1115,16 @@ function updateProjectiles(dt, pNew) {
         if (pr.ownerType === 'local' && Math.random() < 0.35) sfx.ricochet();
       }
 
-      scene.remove(pr.mesh);
+      releaseTracerMesh(pr.mesh);
       projectiles.splice(i, 1);
       continue;
     }
 
     pr.pos.copy(nextPos);
-    pr.mesh.position.copy(nextPos);
-    pr.mesh.lookAt(nextPos.clone().add(pr.vel));
+    if (pr.mesh) {
+      pr.mesh.position.copy(nextPos);
+      pr.mesh.lookAt(nextPos.clone().add(pr.vel));
+    }
   }
 }
 
@@ -1059,6 +1311,12 @@ function animate() {
     const act = controls.consumeActions();
     const stats = OPERATOR_STATS[localState.kit];
 
+    if (act.classSwitch) {
+      switchOperatorClass(act.classSwitch);
+    }
+    if (act.toggleMenu) {
+      toggleQuickMenu();
+    }
     if (act.weaponSwitch !== null) {
       isInspecting = false;
       selectWeapon(act.weaponSwitch);
@@ -1219,14 +1477,19 @@ function animate() {
     camera.rotation.x = THREE.MathUtils.clamp(controls.pitch + recoilKickPitch, -1.35, 1.35);
     camera.rotation.z = -currentLean * 0.16;
 
-    // First-Person Viewmodel Sway, ADS Alignment, Inspect Showcase, Recoil & Reload Animation
+    // First-Person Viewmodel Sway, ADS Sight Alignment, Inspect Showcase, Recoil & Reload Animation
     if (localState.ads) isInspecting = false;
     if (viewmodel) {
       if (isInspecting) inspectPhase += dt;
+      const adsTarget = wpn.id === 'rifle'
+        ? new THREE.Vector3(0.0, -0.095, -0.32)
+        : wpn.id === 'shotgun'
+          ? new THREE.Vector3(0.04, -0.135, -0.36)
+          : new THREE.Vector3(0.0, -0.105, -0.34);
       const targetPos = isInspecting
         ? new THREE.Vector3(0.06, -0.15, -0.46)
         : localState.ads
-          ? new THREE.Vector3(0.0, -0.105, -0.34)
+          ? adsTarget
           : new THREE.Vector3(0.24, -0.22, -0.44);
       const swayX = Math.cos(bobPhase * 0.5) * (localState.ads ? 0.002 : 0.012);
       const swayY = Math.sin(bobPhase) * (localState.ads ? 0.002 : 0.012) + Math.sin(clock.elapsedTime * 2.1) * 0.003;
@@ -1242,6 +1505,16 @@ function animate() {
       viewmodel.rotation.y = THREE.MathUtils.lerp(viewmodel.rotation.y, targetRotY, Math.min(1, dt * 12));
       viewmodel.rotation.z = THREE.MathUtils.lerp(viewmodel.rotation.z, targetRotZ, Math.min(1, dt * 12));
       viewmodel.visible = localState.alive && !(localState.ads && wpn.id === 'railgun');
+
+      // Modulate M-12 Shotgun green tactical laser beam intensity during ADS
+      if (viewmodel.userData.laserBeam?.material) {
+        const targetLaserOpacity = localState.ads ? 0.78 : 0.44;
+        viewmodel.userData.laserBeam.material.opacity = THREE.MathUtils.lerp(
+          viewmodel.userData.laserBeam.material.opacity,
+          targetLaserOpacity,
+          Math.min(1, dt * 12)
+        );
+      }
 
       if (muzzleFlashTimer > 0) {
         muzzleFlashTimer -= dt;
@@ -1364,6 +1637,41 @@ function animate() {
       vault.userData.rings[1].rotation.z -= dt * 0.85;
     }
 
+    // Explosive Fuel Barrel Respawn Timer (25s)
+    for (const b of barrels.values()) {
+      if (b.exploded) {
+        b.respawnTimer -= dt;
+        if (b.respawnTimer <= 0) {
+          b.exploded = false;
+          b.hp = 40;
+          b.respawnTimer = 0;
+          b.mesh.visible = true;
+          b.collider?.setEnabled(true);
+        }
+      }
+    }
+
+    // Directional Damage Arc Indicator (rotates dynamically toward incoming fire / blast)
+    const dmgEl = document.getElementById('damage-indicator');
+    if (dmgEl) {
+      if (damageIndicatorTimer > 0) {
+        damageIndicatorTimer = Math.max(0, damageIndicatorTimer - dt);
+        const dx = damageSourcePos.x - pNew.x;
+        const dz = damageSourcePos.z - pNew.z;
+        const fwdX = -Math.sin(controls.yaw);
+        const fwdZ = -Math.cos(controls.yaw);
+        const rightX = Math.cos(controls.yaw);
+        const rightZ = -Math.sin(controls.yaw);
+        const dotFwd = dx * fwdX + dz * fwdZ;
+        const dotRight = dx * rightX + dz * rightZ;
+        const angleDeg = (Math.atan2(dotRight, dotFwd) * 180) / Math.PI;
+        dmgEl.style.transform = `rotate(${angleDeg.toFixed(1)}deg)`;
+        dmgEl.style.opacity = `${Math.min(1, damageIndicatorTimer / 0.85).toFixed(3)}`;
+      } else if (dmgEl.style.opacity !== '0') {
+        dmgEl.style.opacity = '0';
+      }
+    }
+
     // Hitmarker decay
     if (hitmarkerTimer > 0) {
       hitmarkerTimer -= dt;
@@ -1402,6 +1710,14 @@ function animate() {
 // --- Direct Auto-Launch & Quick In-Game Class Switch ([F1-F3] / [Tab]) ---
 const DEFAULT_WS_URL = (import.meta.env.VITE_WS_URL || '').trim();
 let quickMenuOpen = false;
+
+function showArenaError(msg) {
+  const el = document.getElementById('arena-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
 
 function requestSafePointerLock() {
   if (controls.isTouch || document.pointerLockElement === canvas) return;
