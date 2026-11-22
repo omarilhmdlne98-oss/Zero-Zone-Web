@@ -1,6 +1,31 @@
-// 1973 Sinai Desert Open-World Terrain (400m x 400m) + Suez Canal Crossing Navigation Network
-// Open-source fBm / Simplex 2D heightfield patterns (inspired by josephg/noisejs, mrdoob/three.js terrain examples, and kaolti/monolith-terrain)
+// 1973 Sinai Desert Open-World Terrain (400m x 400m) + Real-World GPS Satellite DEM (30.5800 N, 32.2700 E)
 // Synchronized with Zero-Zone-UE5 UZeroZoneBattlefieldAssetLibrary::GetSinaiBattlefieldSpecs()
+import sinaiGpsDem from './sinai_gps_dem.json';
+
+function sampleGpsDemHeight(x, z) {
+  const gs = sinaiGpsDem.gridSize || 128;
+  const half = (sinaiGpsDem.terrainSizeM || 400) * 0.5;
+  const u = Math.max(0, Math.min(gs - 1.0001, ((x + half) / (half * 2)) * (gs - 1)));
+  const v = Math.max(0, Math.min(gs - 1.0001, ((z + half) / (half * 2)) * (gs - 1)));
+  const x0 = Math.floor(u);
+  const z0 = Math.floor(v);
+  const x1 = Math.min(gs - 1, x0 + 1);
+  const z1 = Math.min(gs - 1, z0 + 1);
+  const tx = u - x0;
+  const tz = v - z0;
+
+  const q = sinaiGpsDem.quantized;
+  const q00 = q[z0 * gs + x0];
+  const q10 = q[z0 * gs + x1];
+  const q01 = q[z1 * gs + x0];
+  const q11 = q[z1 * gs + x1];
+
+  const qTop = q00 + (q10 - q00) * tx;
+  const qBot = q01 + (q11 - q01) * tx;
+  const qVal = qTop + (qBot - qTop) * tz;
+  const span = Math.max(0.01, (sinaiGpsDem.maxElevM || 12.25) - (sinaiGpsDem.minElevM || 0));
+  return (sinaiGpsDem.minElevM || 0) + (qVal / 255.0) * span;
+}
 
 // Deterministic 2D Simplex / Value-Gradient Noise & Multi-Octave fBm
 function hash2D(ix, iz) {
@@ -47,16 +72,12 @@ function smoothstep(edge0, edge1, x) {
 
 /**
  * Continuous 400m x 400m Sinai Desert Heightfield (y in meters).
- * Features:
- * - Wide Suez Canal water channel at z in [-8, 8] (bed y = -1.35m, water y = -0.35m)
- * - 3 flat Pontoon Bridge assault road corridors at x = -28, 0, +28
- * - 6 elevated tactical sniper hills / Bar-Lev bunker plateaus
- * - Rolling multi-octave fBm sand dunes across the +-90m combat zone
- * - Distant desert mountain ridges beyond 135m
+ * Combines real-world AWS Terrarium Satellite DEM (30.5800 N, 32.2700 E)
+ * with tactical Suez Canal grading, 3 Pontoon Bridge corridors, 6 bunker hills,
+ * 8 artillery shell craters, and rolling fBm dune micro-relief.
  */
 export function getSinaiTerrainHeight(x, z) {
   const absZ = Math.abs(z);
-  const absX = Math.abs(x);
 
   // 1. Suez Canal Channel (z in [-8.0, 8.0]) with smooth bank transitions to z = +-10.8
   if (absZ < 10.8) {
@@ -85,12 +106,15 @@ export const SINAI_SHELL_CRATERS = [
 function getSinaiBaseDuneAndHills(x, z) {
   const absZ = Math.abs(z);
 
-  // Base multi-octave fBm desert dunes (0.0m to 2.6m rolling variation)
+  // Real-world GPS Satellite DEM macro-relief (scaled to keep tactical sightlines crisp)
+  const demH = sampleGpsDemHeight(x, z) * 0.42;
+
+  // Base multi-octave fBm desert dune micro-detail
   const rawFbm = fbmDesert2D(x + 120, z + 120);
-  let h = (rawFbm - 0.38) * 3.2;
+  let h = demH + (rawFbm - 0.38) * 2.1;
 
   // Wind-sculpted longitudinal Sinai dune waves
-  h += Math.sin(x * 0.045 + z * 0.025) * 0.55 + Math.cos(z * 0.06 - x * 0.02) * 0.35;
+  h += Math.sin(x * 0.045 + z * 0.025) * 0.45 + Math.cos(z * 0.06 - x * 0.02) * 0.30;
   h = Math.max(0.0, h);
 
   // 6 Strategic Bar-Lev Bunker & Sniper Hill Plateaus (flat top radius 5.5m, blend radius 14m)

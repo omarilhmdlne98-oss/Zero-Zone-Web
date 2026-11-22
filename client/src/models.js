@@ -935,6 +935,7 @@ export function createArenaEnvironment() {
 
   terrainGeo.computeVertexNormals();
   const normAttr = terrainGeo.attributes.normal;
+  const rowVerts = gridSegs + 1;
 
   for (let i = 0; i < posAttr.count; i++) {
     const vx = posAttr.getX(i);
@@ -944,6 +945,18 @@ export function createArenaEnvironment() {
     const slope = 1.0 - THREE.MathUtils.clamp(ny, 0.0, 1.0);
     const rockFactor = THREE.MathUtils.smoothstep(slope, 0.09, 0.34);
 
+    // Real-time Vertex Ambient Occlusion (AO) & curvature from local 4-neighbor height Laplacian
+    const gx = i % rowVerts;
+    const gz = Math.floor(i / rowVerts);
+    const hL = gx > 0 ? posAttr.getY(i - 1) : vy;
+    const hR = gx < gridSegs ? posAttr.getY(i + 1) : vy;
+    const hU = gz > 0 ? posAttr.getY(i - rowVerts) : vy;
+    const hD = gz < gridSegs ? posAttr.getY(i + rowVerts) : vy;
+    const avgNeighborY = (hL + hR + hU + hD) * 0.25;
+    const concavity = avgNeighborY - vy;
+    const vertexAO = THREE.MathUtils.clamp(1.0 - Math.max(0.0, concavity) * 0.44, 0.54, 1.0);
+    const crestBoost = THREE.MathUtils.clamp(Math.max(0.0, -concavity) * 0.14, 0.0, 0.09);
+
     // Base wind-rippled golden sand -> weathered Sinai limestone on steep slopes -> wet dark silt near canal
     let r = 0.90;
     let g = 0.78;
@@ -951,9 +964,9 @@ export function createArenaEnvironment() {
     if (vy < -0.05) {
       // Wet canal bank & bed silt
       const wetT = THREE.MathUtils.clamp((-0.05 - vy) / 1.2, 0.0, 1.0);
-      r = THREE.MathUtils.lerp(0.76, 0.48, wetT);
-      g = THREE.MathUtils.lerp(0.65, 0.42, wetT);
-      b = THREE.MathUtils.lerp(0.48, 0.32, wetT);
+      r = THREE.MathUtils.lerp(0.76, 0.46, wetT);
+      g = THREE.MathUtils.lerp(0.65, 0.40, wetT);
+      b = THREE.MathUtils.lerp(0.48, 0.30, wetT);
     } else if (vy > 4.2) {
       // Distant desert mountain ridge rock
       const t = Math.min(1, (vy - 4.2) / 14.0);
@@ -962,15 +975,15 @@ export function createArenaEnvironment() {
       b = 0.52 - t * 0.15;
     } else {
       const crest = Math.min(1, Math.max(0, vy) / 3.8);
-      r = 0.87 + crest * 0.09;
-      g = 0.75 + crest * 0.09;
-      b = 0.57 + crest * 0.08;
+      r = 0.87 + crest * 0.09 + crestBoost;
+      g = 0.75 + crest * 0.09 + crestBoost;
+      b = 0.57 + crest * 0.08 + crestBoost * 0.8;
     }
 
-    // Slope-based limestone rock exposure
-    r = THREE.MathUtils.lerp(r, 0.64, rockFactor * 0.85);
-    g = THREE.MathUtils.lerp(g, 0.55, rockFactor * 0.85);
-    b = THREE.MathUtils.lerp(b, 0.42, rockFactor * 0.85);
+    // Slope-based fractured limestone rock exposure
+    r = THREE.MathUtils.lerp(r, 0.63, rockFactor * 0.86);
+    g = THREE.MathUtils.lerp(g, 0.54, rockFactor * 0.86);
+    b = THREE.MathUtils.lerp(b, 0.41, rockFactor * 0.86);
 
     // Compacted Desert Assault Roads leading to all 3 Suez Pontoon Bridges (x = -28, 0, +28)
     const roadDist = Math.min(Math.abs(vx + 28.0), Math.abs(vx), Math.abs(vx - 28.0));
@@ -993,9 +1006,9 @@ export function createArenaEnvironment() {
       }
     }
 
-    colors[i * 3] = r;
-    colors[i * 3 + 1] = g;
-    colors[i * 3 + 2] = b;
+    colors[i * 3] = Math.min(1.0, r * vertexAO);
+    colors[i * 3 + 1] = Math.min(1.0, g * vertexAO);
+    colors[i * 3 + 2] = Math.min(1.0, b * vertexAO);
   }
 
   terrainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
