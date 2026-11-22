@@ -1,0 +1,56 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      },
+      "description": "GitHub repository, PR, issue, and Actions automation across Zero-Zone-Web, Zero-Zone-UE5, and Shopify Hub"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--headless",
+        "--isolated"
+      ],
+      "env": {
+        "PLAYWRIGHT_BROWSERS_PATH": "0"
+      },
+      "description": "Headless browser inspection & automated E2E verification for https://zero-zone-game.vercel.app and https://shopifyhub.work"
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "${DATABASE_URL}"
+      ],
+      "description": "Read-only/transactional Postgres & Neon/Supabase schema inspection for Shopify Hub multi-tenant store data"
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--read-only",
+        "--project-ref=${SUPABASE_PROJECT_REF}"
+      ],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+      },
+      "description": "Supabase Edge Functions, Auth, and RLS policy inspection for Shopify Hub"
+    }
+  },
+  "targets": {
+    "zeroZoneWeb": "https://zero-zone-game.vercel.app",
+    "shopifyHub": "https://shopifyhub.work"
+  },
+  "vramBudgetPolicy": {
+    "maxLocalGpuVramMb": 2048,
+    "headlessBrowser": true,
+    "localLlmEnabledByDefault": false
+  }
+}
