@@ -71,6 +71,17 @@ export function getSinaiTerrainHeight(x, z) {
   return getSinaiBaseDuneAndHills(x, z);
 }
 
+export const SINAI_SHELL_CRATERS = [
+  { x: -16.0, z: -18.0, radius: 3.4, depth: 0.72 },
+  { x: 16.0, z: -18.0, radius: 3.4, depth: 0.72 },
+  { x: -34.0, z: -27.0, radius: 3.8, depth: 0.82 },
+  { x: 34.0, z: -27.0, radius: 3.8, depth: 0.82 },
+  { x: 0.0, z: -38.0, radius: 4.2, depth: 0.88 },
+  { x: -20.0, z: 18.0, radius: 3.3, depth: 0.68 },
+  { x: 20.0, z: 18.0, radius: 3.3, depth: 0.68 },
+  { x: 0.0, z: 42.0, radius: 3.9, depth: 0.78 }
+];
+
 function getSinaiBaseDuneAndHills(x, z) {
   const absZ = Math.abs(z);
 
@@ -101,9 +112,24 @@ function getSinaiBaseDuneAndHills(x, z) {
 
   // Flatten the 3 Pontoon Bridge Assault Road Corridors (x = -28, 0, +28) & East Bank Berm Breach lanes
   const roadDist = Math.min(Math.abs(x + 28), Math.abs(x), Math.abs(x - 28));
-  if (roadDist < 6.5 && absZ < 44) {
+  if (roadDist < 6.5 && absZ < 52) {
     const roadKeep = smoothstep(2.8, 6.5, roadDist);
     h *= roadKeep;
+  }
+
+  // Carve 8 Artillery Shell Craters with raised ejecta rims
+  for (const cr of SINAI_SHELL_CRATERS) {
+    const cd = Math.hypot(x - cr.x, z - cr.z);
+    if (cd < cr.radius * 1.45) {
+      const u = cd / cr.radius;
+      if (u < 1.0) {
+        const bowl = (1.0 - u * u) * cr.depth;
+        h -= bowl;
+      } else {
+        const rimT = 1.0 - Math.abs((u - 1.18) / 0.27);
+        if (rimT > 0) h += rimT * cr.depth * 0.32;
+      }
+    }
   }
 
   // Keep immediate canal embankment apron (absZ in [10.8, 14.5]) gently graded for bridge approaches
@@ -131,7 +157,7 @@ export const UPPER_COMBAT_NETWORK = {
     '1973 Sinai Front Open-World Desert Terrain (400m x 400m fBm heightfield)',
     'Wide Suez Canal Channel (z in [-8, 8]) with 3 Tactical Pontoon Bridges (x = -28, 0, +28)',
     'East Bank Sand Berm Rampart (z = -22, y = 4.5m crest) with 3 Hydro-Breached Assault Corridors',
-    '6 Reinforced Bar-Lev Concrete Bunkers on Strategic Desert Hills (+-90m combat zone)'
+    '6 Reinforced Bar-Lev Concrete Bunkers, 6 Disabled Tank Wrecks, Dragons Teeth Traps & Field Depots'
   ],
   terrain_size_m: 400,
   combat_zone_radius_m: 90,
@@ -149,6 +175,20 @@ export const UPPER_COMBAT_NETWORK = {
     { id: 'bunker_wb_west', x: -42, z: 36, y: 2.8, facingZ: -1 },
     { id: 'bunker_wb_east', x: 42, z: 36, y: 2.8, facingZ: -1 },
     { id: 'bunker_wb_stage', x: 0, z: 66, y: 3.4, facingZ: -1 }
+  ],
+  tank_wrecks: [
+    { id: 'tank_wreck_eb_breach_w', x: -24.5, z: -26.5, yaw: 0.38, smokePlume: true },
+    { id: 'tank_wreck_eb_breach_c', x: 4.8, z: -28.0, yaw: -0.44, smokePlume: true },
+    { id: 'tank_wreck_eb_breach_e', x: 24.5, z: -26.5, yaw: -0.32, smokePlume: true },
+    { id: 'tank_wreck_eb_flank_w', x: -36.0, z: -15.5, yaw: 0.62, smokePlume: false },
+    { id: 'tank_wreck_eb_flank_e', x: 36.0, z: -15.5, yaw: -0.58, smokePlume: false },
+    { id: 'tank_wreck_wb_center', x: -6.5, z: 16.5, yaw: 0.22, smokePlume: false }
+  ],
+  field_depots: [
+    { id: 'depot_eb_north_w', x: -22.0, z: -52.0, yaw: 0.08 },
+    { id: 'depot_eb_north_e', x: 22.0, z: -52.0, yaw: -0.08 },
+    { id: 'depot_wb_south_w', x: -22.0, z: 48.0, yaw: -0.06 },
+    { id: 'depot_wb_south_e', x: 22.0, z: 48.0, yaw: 0.06 }
   ],
   segments: [
     // 3 Wide Tactical Pontoon Bridges spanning the 16m Suez Canal (z in [-8.5, 8.5], deck y = 0.45m)

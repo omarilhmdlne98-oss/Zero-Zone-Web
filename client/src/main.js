@@ -1709,6 +1709,23 @@ function animate() {
       arenaEnv.dustPoints.position.x = Math.sin(clock.elapsedTime * 0.22) * 3.5;
       arenaEnv.dustPoints.position.z = Math.cos(clock.elapsedTime * 0.18) * 2.5;
     }
+    if (arenaEnv.smokePlumes?.userData?.smokeAnchors) {
+      const { smokeAnchors, smokePhases, smokeParticlesPerPlume } = arenaEnv.smokePlumes.userData;
+      const posAttr = arenaEnv.smokePlumes.geometry.attributes.position;
+      const arr = posAttr.array;
+      const t = clock.elapsedTime;
+      for (let sIdx = 0; sIdx < smokeAnchors.length; sIdx++) {
+        const anc = smokeAnchors[sIdx];
+        for (let p = 0; p < smokeParticlesPerPlume; p++) {
+          const idx = sIdx * smokeParticlesPerPlume + p;
+          const phase = (smokePhases[idx] + t * 0.11) % 1.0;
+          arr[idx * 3] = anc.x + phase * 3.2 + Math.sin(phase * 10.0 + t * 1.4 + sIdx) * (0.35 + phase * 1.8);
+          arr[idx * 3 + 1] = anc.y + phase * 17.5;
+          arr[idx * 3 + 2] = anc.z - phase * 1.4 + Math.cos(phase * 8.0 + t * 1.2 + sIdx) * (0.35 + phase * 1.5);
+        }
+      }
+      posAttr.needsUpdate = true;
+    }
 
     // Explosive Fuel Barrel Respawn Timer (25s)
     for (const b of barrels.values()) {

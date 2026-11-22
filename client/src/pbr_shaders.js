@@ -141,6 +141,26 @@ export const BATTLEFIELD_PBR_PRESETS = {
     "rim_strength": 0.12,
     "ao_strength": 0.92,
     "emissive_hex": "#d6be92"
+  },
+  "charred_tank_armor": {
+    "id": "charred_tank_armor",
+    "name": "Charred 1973 Sinai Tank Hull Steel",
+    "base_color_hex": "#3d3830",
+    "roughness": 0.64,
+    "metallic": 0.72,
+    "rim_strength": 0.28,
+    "ao_strength": 0.92,
+    "emissive_hex": "#f97316"
+  },
+  "field_tent_canvas": {
+    "id": "field_tent_canvas",
+    "name": "Desert Olive Field Tent Canvas",
+    "base_color_hex": "#8a7955",
+    "roughness": 0.92,
+    "metallic": 0.02,
+    "rim_strength": 0.14,
+    "ao_strength": 0.90,
+    "emissive_hex": "#e5cfa3"
   }
 };
 
@@ -209,7 +229,7 @@ export const TACTICAL_STRUCTURE_SPECS = [
 
 /**
  * Enhances a Three.js MeshStandardMaterial with Fresnel tactical rim lighting,
- * micro-grain desert quartz sparkle, and slope-aware contrast tuned for 2GB VRAM GPUs.
+ * micro-grain desert quartz sparkle, and wind-ripple contrast tuned for 2GB VRAM GPUs.
  */
 export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') {
   const preset = BATTLEFIELD_PBR_PRESETS[presetId] || BATTLEFIELD_PBR_PRESETS.brushed_steel;
@@ -222,7 +242,7 @@ export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') 
   const isSand = presetId === 'sinai_sand' || presetId === 'berm_earth';
 
   try {
-    material.customProgramCacheKey = () => (isSand ? 'zero_zone_pbr_sinai_sand_v3' : 'zero_zone_pbr_fresnel_v3');
+    material.customProgramCacheKey = () => (isSand ? 'zero_zone_pbr_sinai_sand_v4' : 'zero_zone_pbr_fresnel_v4');
     material.onBeforeCompile = (shader) => {
       try {
         if (
@@ -247,12 +267,12 @@ export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') 
             `#if !defined(FLAT_SHADED)
              vec3 zzN = length(vNormal) > 0.0001 ? normalize(vNormal) : vec3(0.0, 1.0, 0.0);
              vec3 zzV = length(vViewPosition) > 0.0001 ? normalize(vViewPosition) : vec3(0.0, 0.0, 1.0);
-             float zzFresnel = pow(max(0.0001, 1.0 - clamp(dot(zzN, zzV), 0.0, 1.0)), 3.0);
-             gl_FragColor.rgb += uRimColor * zzFresnel * uRimStrength * 0.42;
+             float zzFresnel = pow(max(0.0001, 1.0 - clamp(dot(zzN, zzV), 0.0, 1.0)), 2.8);
+             gl_FragColor.rgb += uRimColor * zzFresnel * uRimStrength * 0.45;
              if (uIsSand > 0.5) {
                float zzGlint = fract(sin(dot(floor(gl_FragCoord.xy * 0.65), vec2(12.9898, 78.233))) * 43758.5453);
-               float zzSparkle = smoothstep(0.965, 0.999, zzGlint) * zzFresnel;
-               gl_FragColor.rgb += vec3(1.0, 0.93, 0.76) * zzSparkle * 0.24;
+               float zzSparkle = smoothstep(0.958, 0.999, zzGlint) * (0.35 + 0.65 * zzFresnel);
+               gl_FragColor.rgb += vec3(1.0, 0.94, 0.78) * zzSparkle * 0.28;
              }
              #endif
              #include <dithering_fragment>`

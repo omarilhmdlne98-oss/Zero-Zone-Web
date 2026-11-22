@@ -908,6 +908,8 @@ export function createArenaEnvironment() {
   const normAttr = terrainGeo.attributes.normal;
 
   for (let i = 0; i < posAttr.count; i++) {
+    const vx = posAttr.getX(i);
+    const vz = posAttr.getZ(i);
     const vy = posAttr.getY(i);
     const ny = Math.abs(normAttr.getY(i));
     const slope = 1.0 - THREE.MathUtils.clamp(ny, 0.0, 1.0);
@@ -940,6 +942,27 @@ export function createArenaEnvironment() {
     r = THREE.MathUtils.lerp(r, 0.64, rockFactor * 0.85);
     g = THREE.MathUtils.lerp(g, 0.55, rockFactor * 0.85);
     b = THREE.MathUtils.lerp(b, 0.42, rockFactor * 0.85);
+
+    // Compacted Desert Assault Roads leading to all 3 Suez Pontoon Bridges (x = -28, 0, +28)
+    const roadDist = Math.min(Math.abs(vx + 28.0), Math.abs(vx), Math.abs(vx - 28.0));
+    if (roadDist < 4.2 && Math.abs(vz) > 8.6 && Math.abs(vz) < 52.0) {
+      const roadBlend = 1.0 - THREE.MathUtils.smoothstep(roadDist, 1.6, 4.2);
+      const trackGroove = Math.abs(roadDist - 1.15) < 0.45 ? 0.14 : 0.0;
+      r = THREE.MathUtils.lerp(r, 0.64 - trackGroove, roadBlend * 0.75);
+      g = THREE.MathUtils.lerp(g, 0.53 - trackGroove, roadBlend * 0.75);
+      b = THREE.MathUtils.lerp(b, 0.38 - trackGroove * 0.8, roadBlend * 0.75);
+    }
+
+    // Scorched Artillery Shell Craters (dark ash bowl + charred ejecta rim)
+    for (const cr of SINAI_SHELL_CRATERS) {
+      const cd = Math.hypot(vx - cr.x, vz - cr.z);
+      if (cd < cr.radius * 1.35) {
+        const scorch = 1.0 - THREE.MathUtils.smoothstep(cd, cr.radius * 0.25, cr.radius * 1.35);
+        r = THREE.MathUtils.lerp(r, 0.26, scorch * 0.82);
+        g = THREE.MathUtils.lerp(g, 0.22, scorch * 0.82);
+        b = THREE.MathUtils.lerp(b, 0.18, scorch * 0.82);
+      }
+    }
 
     colors[i * 3] = r;
     colors[i * 3 + 1] = g;
@@ -1270,7 +1293,171 @@ export function createArenaEnvironment() {
     group.add(scrubInst);
   }
 
-  // --- 11. Drifting Golden Desert Sand-Dust Motes in the Air (Lightweight THREE.Points) ---
+  // --- 11. 6 Disabled / Charred 1973 Tank Hull Wrecks Near East Bank Sand Berm Breaches (Instanced + Solid Cover Colliders) ---
+  const tankWrecks = UPPER_COMBAT_NETWORK.tank_wrecks || [];
+  const tankArmorMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({
+      map: getSteelTexture(3, 2),
+      color: 0x453e34
+    }),
+    'charred_tank_armor'
+  );
+  if (tankWrecks.length > 0) {
+    const hullGeo = new THREE.BoxGeometry(3.2, 1.25, 5.4);
+    const turretGeo = new THREE.CylinderGeometry(1.18, 1.38, 0.82, 10);
+    const barrelGeo = new THREE.CylinderGeometry(0.11, 0.13, 3.8, 8);
+    barrelGeo.rotateX(Math.PI / 2);
+
+    const hullInst = new THREE.InstancedMesh(hullGeo, tankArmorMat, tankWrecks.length);
+    const turretInst = new THREE.InstancedMesh(turretGeo, tankArmorMat, tankWrecks.length);
+    const barrelInst = new THREE.InstancedMesh(barrelGeo, tankArmorMat, tankWrecks.length);
+    const dummy = new THREE.Object3D();
+
+    tankWrecks.forEach((tk, idx) => {
+      const ty = getSinaiTerrainHeight(tk.x, tk.z);
+      const tiltX = (idx % 2 === 0 ? 1 : -1) * 0.05;
+      const tiltZ = (idx % 3 === 0 ? 1 : -1) * 0.06;
+
+      // Lower armored hull & treads
+      dummy.position.set(tk.x, ty + 0.62, tk.z);
+      dummy.rotation.set(tiltX, tk.yaw, tiltZ);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      hullInst.setMatrixAt(idx, dummy.matrix);
+
+      // Offset canted turret dome
+      const turYaw = tk.yaw + (idx % 2 === 0 ? 0.45 : -0.52);
+      dummy.position.set(tk.x, ty + 1.54, tk.z - 0.25);
+      dummy.rotation.set(tiltX * 1.2, turYaw, tiltZ * 1.2);
+      dummy.updateMatrix();
+      turretInst.setMatrixAt(idx, dummy.matrix);
+
+      // Disabled main gun barrel
+      const bx = tk.x + Math.sin(turYaw) * 2.2;
+      const bz = tk.z - 0.25 + Math.cos(turYaw) * 2.2;
+      dummy.position.set(bx, ty + 1.58, bz);
+      dummy.rotation.set(-0.08, turYaw, 0);
+      dummy.updateMatrix();
+      barrelInst.setMatrixAt(idx, dummy.matrix);
+
+      // Solid physics & AI cover box for tactical infantry firefights
+      colliders.push({ x: tk.x, y: ty + 0.95, z: tk.z, hx: 1.9, hy: 1.0, hz: 2.6, rx: 0, rz: 0 });
+      coverPoints.push({ x: tk.x, z: tk.z });
+    });
+
+    hullInst.castShadow = false;
+    hullInst.receiveShadow = true;
+    turretInst.castShadow = false;
+    turretInst.receiveShadow = true;
+    barrelInst.castShadow = false;
+    barrelInst.receiveShadow = false;
+    group.add(hullInst, turretInst, barrelInst);
+  }
+
+  // --- 12. Reinforced Concrete Dragon's Teeth Anti-Tank Pyramid Lines Along Flanks (1 InstancedMesh) ---
+  const dragonTeethCoords = [];
+  for (let x = -54; x <= -34; x += 2.5) {
+    dragonTeethCoords.push([x, -17.5], [x + 1.25, -19.2]);
+  }
+  for (let x = 34; x <= 54; x += 2.5) {
+    dragonTeethCoords.push([x, -17.5], [x - 1.25, -19.2]);
+  }
+  if (dragonTeethCoords.length > 0) {
+    const toothGeo = new THREE.ConeGeometry(0.68, 1.15, 4);
+    const toothInst = new THREE.InstancedMesh(toothGeo, bunkerMat, dragonTeethCoords.length);
+    const dummy = new THREE.Object3D();
+    dragonTeethCoords.forEach(([tx, tz], idx) => {
+      const ty = getSinaiTerrainHeight(tx, tz);
+      dummy.position.set(tx, ty + 0.52, tz);
+      dummy.rotation.set(0, Math.PI * 0.25 + (idx % 3) * 0.08, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      toothInst.setMatrixAt(idx, dummy.matrix);
+    });
+    toothInst.castShadow = false;
+    toothInst.receiveShadow = true;
+    group.add(toothInst);
+  }
+
+  // --- 13. Military Field Command Tents & Supply Depots (1 InstancedMesh + Colliders) ---
+  const depots = UPPER_COMBAT_NETWORK.field_depots || [];
+  const tentMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({
+      map: getCamoNetTexture(2, 2),
+      color: 0x9b8862
+    }),
+    'field_tent_canvas'
+  );
+  if (depots.length > 0) {
+    const tentBodyGeo = new THREE.BoxGeometry(5.4, 1.65, 3.8);
+    const tentRoofGeo = new THREE.ConeGeometry(3.4, 1.15, 4);
+    const bodyInst = new THREE.InstancedMesh(tentBodyGeo, tentMat, depots.length);
+    const roofInst = new THREE.InstancedMesh(tentRoofGeo, tentMat, depots.length);
+    const dummy = new THREE.Object3D();
+
+    depots.forEach((dp, idx) => {
+      const dy = getSinaiTerrainHeight(dp.x, dp.z);
+      dummy.position.set(dp.x, dy + 0.82, dp.z);
+      dummy.rotation.set(0, dp.yaw, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      bodyInst.setMatrixAt(idx, dummy.matrix);
+
+      dummy.position.set(dp.x, dy + 2.15, dp.z);
+      dummy.rotation.set(0, dp.yaw + Math.PI * 0.25, 0);
+      dummy.scale.set(1.15, 1.0, 0.85);
+      dummy.updateMatrix();
+      roofInst.setMatrixAt(idx, dummy.matrix);
+
+      colliders.push({ x: dp.x, y: dy + 1.15, z: dp.z, hx: 2.7, hy: 1.15, hz: 1.9, rx: 0, rz: 0 });
+      coverPoints.push({ x: dp.x, z: dp.z });
+    });
+
+    bodyInst.castShadow = false;
+    bodyInst.receiveShadow = true;
+    roofInst.castShadow = false;
+    roofInst.receiveShadow = true;
+    group.add(bodyInst, roofInst);
+  }
+
+  // --- 14. 3 Rising Battlefield Smoke Plumes from Burning Tank Wrecks (Lightweight Pooled THREE.Points) ---
+  const smokePlumeSources = tankWrecks.filter((t) => t.smokePlume);
+  const smokeParticlesPerPlume = 28;
+  const totalSmokeCount = smokePlumeSources.length * smokeParticlesPerPlume;
+  let smokePlumes = null;
+  if (totalSmokeCount > 0) {
+    const smokeGeo = new THREE.BufferGeometry();
+    const smokePositions = new Float32Array(totalSmokeCount * 3);
+    const smokePhases = new Float32Array(totalSmokeCount);
+    const smokeAnchors = [];
+
+    smokePlumeSources.forEach((src, sIdx) => {
+      const sy = getSinaiTerrainHeight(src.x, src.z) + 1.4;
+      smokeAnchors.push({ x: src.x, y: sy, z: src.z });
+      for (let p = 0; p < smokeParticlesPerPlume; p++) {
+        const idx = sIdx * smokeParticlesPerPlume + p;
+        const phase = p / smokeParticlesPerPlume;
+        smokePhases[idx] = phase;
+        smokePositions[idx * 3] = src.x + Math.sin(phase * 12.0 + sIdx) * (0.4 + phase * 2.4);
+        smokePositions[idx * 3 + 1] = sy + phase * 16.5;
+        smokePositions[idx * 3 + 2] = src.z + Math.cos(phase * 10.0 + sIdx) * (0.4 + phase * 2.0);
+      }
+    });
+
+    smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+    const smokeMat = new THREE.PointsMaterial({
+      color: 0x3b352e,
+      size: 2.1,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false
+    });
+    smokePlumes = new THREE.Points(smokeGeo, smokeMat);
+    smokePlumes.userData = { smokeAnchors, smokePhases, smokeParticlesPerPlume };
+    group.add(smokePlumes);
+  }
+
+  // --- 15. Drifting Golden Desert Sand-Dust Motes in the Air (Lightweight THREE.Points) ---
   const dustCount = 160;
   const dustGeo = new THREE.BufferGeometry();
   const dustPositions = new Float32Array(dustCount * 3);
@@ -1313,6 +1500,7 @@ export function createArenaEnvironment() {
     radarDishes,
     waterMaterial: waterShaderMat,
     dustPoints,
+    smokePlumes,
     terrainTrimesh: { vertices: trimeshVertices, indices: trimeshIndices }
   };
 }
