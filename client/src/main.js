@@ -13,6 +13,7 @@ import {
   createSkyDome,
   createVaultStructure
 } from './models.js';
+import { UPPER_COMBAT_NETWORK, sampleCombatSurfaceY } from './bridge_network.js';
 import { NetworkClient } from './network.js';
 
 // --- Renderer & Cinematic ACES Filmic Lighting ---
@@ -433,11 +434,12 @@ function spawnLocalBots() {
   }
   localBots.length = 0;
 
+  const topY = UPPER_COMBAT_NETWORK.upper_deck_y;
   const botConfigs = [
-    { id: 'bot_0', name: 'Vanguard-01', kit: 'vanguard', weaponIdx: 0, x: -13, z: -12 },
-    { id: 'bot_1', name: 'Spectre-02', kit: 'spectre', weaponIdx: 1, x: 13, z: -12 },
-    { id: 'bot_2', name: 'Juggernaut-03', kit: 'juggernaut', weaponIdx: 2, x: -13, z: 3 },
-    { id: 'bot_3', name: 'Vanguard-04', kit: 'vanguard', weaponIdx: 0, x: 13, z: 3 }
+    { id: 'bot_0', name: 'Vanguard-01', kit: 'vanguard', weaponIdx: 0, x: -19.5, y: topY, z: -19.5, upperPatrol: true },
+    { id: 'bot_1', name: 'Spectre-02', kit: 'spectre', weaponIdx: 1, x: 19.5, y: topY, z: -19.5, upperPatrol: true },
+    { id: 'bot_2', name: 'Juggernaut-03', kit: 'juggernaut', weaponIdx: 2, x: -11.8, y: 0, z: 3, upperPatrol: false },
+    { id: 'bot_3', name: 'Vanguard-04', kit: 'vanguard', weaponIdx: 0, x: 11.8, y: 0, z: 3, upperPatrol: false }
   ];
 
   for (const cfg of botConfigs) {
@@ -446,14 +448,19 @@ function spawnLocalBots() {
     const mesh = createOperatorModel(cfg.kit, wpn.id);
     mesh.userData.botId = cfg.id;
     mesh.traverse((c) => { c.userData.botId = cfg.id; });
-    mesh.position.set(cfg.x, 0, cfg.z);
+    mesh.position.set(cfg.x, cfg.y, cfg.z);
     scene.add(mesh);
+
+    const initWp = cfg.upperPatrol
+      ? UPPER_COMBAT_NETWORK.upper_waypoints[Math.floor(Math.random() * UPPER_COMBAT_NETWORK.upper_waypoints.length)]
+      : { x: (Math.random() - 0.5) * 20, y: 0, z: (Math.random() - 0.5) * 20 };
 
     localBots.push({
       id: cfg.id,
       name: cfg.name,
       kit: cfg.kit,
       weaponIdx: cfg.weaponIdx,
+      upperPatrol: cfg.upperPatrol,
       mesh,
       hp: stats.maxHp,
       maxHp: stats.maxHp,
@@ -465,7 +472,7 @@ function spawnLocalBots() {
       deathTimer: 0,
       respawnTimer: 0,
       state: 'PATROL',
-      waypoint: new THREE.Vector3((Math.random() - 0.5) * 24, 0, (Math.random() - 0.5) * 24),
+      waypoint: new THREE.Vector3(initWp.x, initWp.y, initWp.z),
       alertPos: null,
       alertTimer: 0,
       strafeDir: Math.random() < 0.5 ? 1 : -1,
@@ -974,10 +981,22 @@ function updateTacticalBots(dt, pNew) {
     } else {
       bot.state = 'PATROL';
       desiredMove.subVectors(bot.waypoint, bot.mesh.position).setY(0);
-      if (desiredMove.length() < 1.5) {
-        const a = Math.random() * Math.PI * 2;
-        const rad = 6 + Math.random() * 13;
-        bot.waypoint.set(Math.cos(a) * rad, 0, Math.sin(a) * rad);
+      if (desiredMove.length() < 1.6) {
+        if (bot.upperPatrol || bot.mesh.position.y >= 1.8) {
+          const wps = UPPER_COMBAT_NETWORK.upper_waypoints;
+          const pick = wps[Math.floor(Math.random() * wps.length)];
+          bot.waypoint.set(pick.x, pick.y, pick.z);
+        } else {
+          // Periodically route lower bots up one of the 4 inclined ramps onto the upper catwalk network
+          if (Math.random() < 0.45) {
+            const ramp = UPPER_COMBAT_NETWORK.ramp_navs[Math.floor(Math.random() * UPPER_COMBAT_NETWORK.ramp_navs.length)];
+            bot.waypoint.set(ramp.x, ramp.topY, ramp.zTop);
+          } else {
+            const a = Math.random() * Math.PI * 2;
+            const rad = 6 + Math.random() * 12;
+            bot.waypoint.set(Math.cos(a) * rad, 0, Math.sin(a) * rad);
+          }
+        }
       }
       lookTarget = bot.waypoint;
     }
@@ -987,24 +1006,32 @@ function updateTacticalBots(dt, pNew) {
     if (desiredMove.lengthSq() > 0.04) {
       desiredMove.normalize();
       const spd = bot.crouching ? bot.moveSpeed * 0.62 : bot.moveSpeed;
-      const nx = THREE.MathUtils.clamp(bot.mesh.position.x + desiredMove.x * spd * dt, -21, 21);
-      const nz = THREE.MathUtils.clamp(bot.mesh.position.z + desiredMove.z * spd * dt, -21, 21);
-      if (Math.hypot(nx, nz) > 3.2) {
+      const nx = THREE.MathUtils.clamp(bot.mesh.position.x + desiredMove.x * spd * dt, -21.2, 21.2);
+      const nz = THREE.MathUtils.clamp(bot.mesh.position.z + desiredMove.z * spd * dt, -21.2, 21.2);
+      if (Math.hypot(nx, nz) > 2.55) {
         bot.mesh.position.x = nx;
         bot.mesh.position.z = nz;
         actualSpeed = spd;
       }
     }
 
+    // Multi-tier surface elevation (ground, 4 smooth inclined ramps, 4 perimeter catwalks, 2 cross-bridges, Vault overpass)
+    const floorY = sampleCombatSurfaceY(bot.mesh.position.x, bot.mesh.position.z, bot.mesh.position.y);
+
     // Bot jump-pad bounce
     for (const pad of jumpPads) {
-      if (Math.hypot(bot.mesh.position.x - pad.position.x, bot.mesh.position.z - pad.position.z) < 1.5 && bot.mesh.position.y <= 0.15) {
+      if (Math.hypot(bot.mesh.position.x - pad.position.x, bot.mesh.position.z - pad.position.z) < 1.5 && bot.mesh.position.y <= 0.2) {
         bot.vy = 11.5;
       }
     }
-    bot.vy -= 18.5 * dt;
-    bot.mesh.position.y = Math.max(0, bot.mesh.position.y + bot.vy * dt);
-    if (bot.mesh.position.y <= 0) bot.vy = 0;
+    if (bot.vy > 0 || bot.mesh.position.y > floorY + 0.15) {
+      bot.vy -= 18.5 * dt;
+      bot.mesh.position.y = Math.max(floorY, bot.mesh.position.y + bot.vy * dt);
+      if (bot.mesh.position.y <= floorY) bot.vy = 0;
+    } else {
+      bot.mesh.position.y = THREE.MathUtils.lerp(bot.mesh.position.y, floorY, Math.min(1, dt * 16));
+      bot.vy = 0;
+    }
 
     if (lookTarget) {
       const dx = lookTarget.x - bot.mesh.position.x;

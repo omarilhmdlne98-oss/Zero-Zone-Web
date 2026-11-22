@@ -135,6 +135,27 @@ export function getKevlarTexture() {
   }, 3, 3);
 }
 
+export function getCatwalkGrateTexture(repX = 4, repY = 4) {
+  return makeCanvasTexture(`grate_${repX}_${repY}`, 128, (ctx, s) => {
+    ctx.fillStyle = '#242b35';
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = '#4e5b6e';
+    ctx.lineWidth = 3;
+    for (let i = 0; i <= s; i += 16) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0); ctx.lineTo(i, s);
+      ctx.moveTo(0, i); ctx.lineTo(s, i);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#11161e';
+    for (let y = 4; y < s; y += 16) {
+      for (let x = 4; x < s; x += 16) {
+        ctx.fillRect(x, y, 8, 8);
+      }
+    }
+  }, repX, repY);
+}
+
 // --- Detailed 3D Tactical Weapons ---
 export function createWeaponMesh(weaponId = 'rifle') {
   const gun = new THREE.Group();
@@ -527,6 +548,7 @@ export function createArenaEnvironment() {
   const group = new THREE.Group();
   const colliders = [];
   const coverPoints = [];
+  const stanchionPositions = [];
 
   const concreteMat = applyBattlefieldPBRShader(
     new THREE.MeshStandardMaterial({ map: getConcreteTexture(10, 10) }),
@@ -539,6 +561,10 @@ export function createArenaEnvironment() {
   const steelMat = applyBattlefieldPBRShader(
     new THREE.MeshStandardMaterial({ map: getSteelTexture(3, 1), color: 0x4b5666 }),
     'brushed_steel'
+  );
+  const grateMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getCatwalkGrateTexture(6, 2), color: 0x627082 }),
+    'catwalk_grate'
   );
   const towerMat = applyBattlefieldPBRShader(
     new THREE.MeshStandardMaterial({ map: getSteelTexture(2, 2), color: 0x364150 }),
@@ -554,14 +580,16 @@ export function createArenaEnvironment() {
   floor.receiveShadow = true;
   group.add(floor);
 
-  const addStaticBox = (x, y, z, w, h, d, mat, registerCollider = true) => {
+  const addStaticBox = (x, y, z, w, h, d, mat, registerCollider = true, rx = 0, rz = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
+    if (rx !== 0) mesh.rotation.x = rx;
+    if (rz !== 0) mesh.rotation.z = rz;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
     if (registerCollider) {
-      colliders.push({ x, y, z, hx: w / 2, hy: h / 2, hz: d / 2 });
+      colliders.push({ x, y, z, hx: w / 2, hy: h / 2, hz: d / 2, rx, rz });
     }
     return mesh;
   };
@@ -572,65 +600,126 @@ export function createArenaEnvironment() {
   addStaticBox(-24, 3.0, 0, 1.0, 6.0, 48, wallMat);
   addStaticBox(24, 3.0, 0, 1.0, 6.0, 48, wallMat);
 
-  // Elevated North & South Sniper Perches / Industrial Catwalks (y = 3.2m)
-  for (const side of [-1, 1]) {
-    const zDeck = side * 17.5;
-    addStaticBox(0, 3.1, zDeck, 18, 0.35, 4.2, steelMat);
-    // Guardrails (waist-high tactical cover on sniper deck)
-    addStaticBox(-5.5, 3.85, zDeck - side * 1.95, 6.2, 1.05, 0.24, cautionMat);
-    addStaticBox(5.5, 3.85, zDeck - side * 1.95, 6.2, 1.05, 0.24, cautionMat);
-    // Support pillars
-    addStaticBox(-8.2, 1.55, zDeck, 0.65, 3.1, 0.65, steelMat);
-    addStaticBox(8.2, 1.55, zDeck, 0.65, 3.1, 0.65, steelMat);
-    // Access Stairs/Stepped Ramps on East & West ends
-    for (let step = 0; step < 6; step++) {
-      const sy = 0.26 + step * 0.52;
-      const sx = 9.8 + (5 - step) * 0.95;
-      addStaticBox(sx, sy / 2, zDeck, 0.95, sy, 3.2, steelMat);
-      addStaticBox(-sx, sy / 2, zDeck, 0.95, sy, 3.2, steelMat);
-    }
-    // Emissive Tactical Strip under deck
-    addStaticBox(0, 2.88, zDeck - side * 2.05, 16, 0.09, 0.08, beaconMat, false);
-  }
+  // --- Interconnected Upper Combat Network (Exported from Static-Recomp-Native) ---
+  // 4 Corner Towers, 4 Perimeter Catwalks, Vault Overpass Ring, 2 Central Cross-Bridges, 4 Smooth Inclined Ramps
+  const topY = UPPER_COMBAT_NETWORK.upper_deck_y;
 
-  // Corner Armored Overwatch Guard Towers (Leonida/XenonRecomp Tactical Structures)
-  for (const tx of [-19.5, 19.5]) {
-    for (const tz of [-19.5, 19.5]) {
-      // 4 reinforced steel columns
-      for (const ox of [-1.4, 1.4]) {
-        for (const oz of [-1.4, 1.4]) {
-          addStaticBox(tx + ox, 2.4, tz + oz, 0.36, 4.8, 0.36, towerMat);
+  for (const seg of UPPER_COMBAT_NETWORK.segments) {
+    const mat =
+      seg.kind === 'tower'
+        ? towerMat
+        : seg.kind === 'vault_overpass'
+          ? steelMat
+          : grateMat;
+
+    // Deck / Ramp surface (center y adjusted so top face sits cleanly at seg.y for flat decks)
+    const deckCenterY = seg.kind === 'ramp' ? seg.y - seg.height * 0.5 : seg.y - seg.height * 0.5;
+    addStaticBox(seg.x, deckCenterY, seg.z, seg.width, seg.height, seg.depth, mat, true, seg.rx, seg.rz);
+
+    if (seg.kind === 'tower') {
+      // 4 reinforced tower support columns + glowing tactical beacon
+      for (const ox of [-1.6, 1.6]) {
+        for (const oz of [-1.6, 1.6]) {
+          addStaticBox(seg.x + ox, (topY - 0.16) * 0.5, seg.z + oz, 0.36, topY - 0.16, 0.36, towerMat);
         }
       }
-      // Overwatch deck + armored parapet + tactical spotlight beacon
-      addStaticBox(tx, 4.85, tz, 3.6, 0.3, 3.6, towerMat);
-      addStaticBox(tx, 5.45, tz + (tz < 0 ? 1.68 : -1.68), 3.5, 0.95, 0.22, towerMat);
-      addStaticBox(tx + (tx < 0 ? 1.68 : -1.68), 5.45, tz, 0.22, 0.95, 3.5, towerMat);
-      addStaticBox(tx, 6.02, tz + (tz < 0 ? 1.72 : -1.72), 2.2, 0.1, 0.1, amberBeaconMat, false);
+      addStaticBox(seg.x, topY + 1.08, seg.z + (seg.z < 0 ? -1.85 : 1.85), 3.6, 0.1, 0.1, amberBeaconMat, false);
+    } else if (seg.kind === 'catwalk') {
+      // Under-deck tactical glow trim + support pillars at thirds
+      const isNS = seg.width > seg.depth;
+      if (isNS) {
+        addStaticBox(seg.x, topY - 0.32, seg.z + (seg.z < 0 ? 1.55 : -1.55), seg.width - 2, 0.08, 0.08, beaconMat, false);
+        for (const px of [-14, -5.5, 5.5, 14]) {
+          addStaticBox(px, (topY - 0.28) * 0.5, seg.z, 0.45, topY - 0.28, 0.45, steelMat);
+        }
+        // Guardrail segments with open passages at cross-bridge (x=0) and ramps (x=+/-11.8)
+        const railZ = seg.z + (seg.z < 0 ? 1.52 : -1.52);
+        for (const [rxStart, rxEnd] of [[-17.2, -13.4], [-10.0, -1.7], [1.7, 10.0], [13.4, 17.2]]) {
+          const rw = rxEnd - rxStart;
+          const rcx = (rxStart + rxEnd) * 0.5;
+          addStaticBox(rcx, topY + 0.92, railZ, rw, 0.09, 0.1, cautionMat, true);
+          addStaticBox(rcx, topY + 0.46, railZ, rw, 0.07, 0.08, steelMat, false);
+          stanchionPositions.push([rxStart + 0.2, topY + 0.46, railZ], [rxEnd - 0.2, topY + 0.46, railZ]);
+        }
+      } else {
+        addStaticBox(seg.x + (seg.x < 0 ? 1.55 : -1.55), topY - 0.32, seg.z, 0.08, 0.08, seg.depth - 2, beaconMat, false);
+        for (const pz of [-13, -5.5, 5.5, 13]) {
+          addStaticBox(seg.x, (topY - 0.28) * 0.5, pz, 0.45, topY - 0.28, 0.45, steelMat);
+        }
+        const railX = seg.x + (seg.x < 0 ? 1.52 : -1.52);
+        for (const [rzStart, rzEnd] of [[-17.2, -1.7], [1.7, 17.2]]) {
+          const rd = rzEnd - rzStart;
+          const rcz = (rzStart + rzEnd) * 0.5;
+          addStaticBox(railX, topY + 0.92, rcz, 0.1, 0.09, rd, cautionMat, true);
+          addStaticBox(railX, topY + 0.46, rcz, 0.08, 0.07, rd, steelMat, false);
+          stanchionPositions.push([railX, topY + 0.46, rzStart + 0.2], [railX, topY + 0.46, rzEnd - 0.2]);
+        }
+      }
+    } else if (seg.kind === 'cross_bridge') {
+      const isEW = seg.width > seg.depth;
+      if (isEW) {
+        for (const dz of [-1.42, 1.42]) {
+          addStaticBox(seg.x, topY + 0.92, seg.z + dz, seg.width - 0.6, 0.08, 0.09, cautionMat, true);
+          stanchionPositions.push(
+            [seg.x - seg.width * 0.4, topY + 0.46, seg.z + dz],
+            [seg.x, topY + 0.46, seg.z + dz],
+            [seg.x + seg.width * 0.4, topY + 0.46, seg.z + dz]
+          );
+        }
+        addStaticBox(seg.x, topY - 0.28, seg.z, seg.width - 0.8, 0.08, 0.12, beaconMat, false);
+      } else {
+        for (const dx of [-1.42, 1.42]) {
+          addStaticBox(seg.x + dx, topY + 0.92, seg.z, 0.09, 0.08, seg.depth - 0.6, cautionMat, true);
+          stanchionPositions.push(
+            [seg.x + dx, topY + 0.46, seg.z - seg.depth * 0.4],
+            [seg.x + dx, topY + 0.46, seg.z],
+            [seg.x + dx, topY + 0.46, seg.z + seg.depth * 0.4]
+          );
+        }
+        addStaticBox(seg.x, topY - 0.28, seg.z, 0.12, 0.08, seg.depth - 0.8, beaconMat, false);
+      }
+    } else if (seg.kind === 'ramp') {
+      // Sloped steel side stringers + safety handrails aligned to ramp pitch
+      for (const sideX of [-seg.width * 0.5 + 0.06, seg.width * 0.5 - 0.06]) {
+        addStaticBox(seg.x + sideX, seg.y + 0.78, seg.z, 0.09, 0.09, seg.depth, cautionMat, true, seg.rx, seg.rz);
+        addStaticBox(seg.x + sideX, seg.y + 0.36, seg.z, 0.07, 0.07, seg.depth, steelMat, false, seg.rx, seg.rz);
+      }
+      // Emissive floor guidance strips along ramp center
+      addStaticBox(seg.x, seg.y + 0.03, seg.z, 0.16, 0.03, seg.depth - 0.8, beaconMat, false, seg.rx, seg.rz);
     }
   }
 
-  // Overhead Industrial Steel Gantry spanning East-West above the central Vault
-  addStaticBox(0, 7.2, 0, 44, 0.45, 2.6, steelMat, false);
-  addStaticBox(0, 6.9, 1.32, 42, 0.1, 0.08, beaconMat, false);
-  addStaticBox(0, 6.9, -1.32, 42, 0.1, 0.08, beaconMat, false);
+  // Batch all guardrail stanchions into a single InstancedMesh (2GB VRAM & draw-call optimization)
+  if (stanchionPositions.length > 0) {
+    const postGeo = new THREE.BoxGeometry(0.08, 0.92, 0.08);
+    const postInst = new THREE.InstancedMesh(postGeo, steelMat, stanchionPositions.length);
+    const dummy = new THREE.Object3D();
+    stanchionPositions.forEach(([px, py, pz], idx) => {
+      dummy.position.set(px, py, pz);
+      dummy.updateMatrix();
+      postInst.setMatrixAt(idx, dummy.matrix);
+    });
+    postInst.castShadow = true;
+    postInst.receiveShadow = true;
+    group.add(postInst);
+  }
 
   // Reinforced Ballistic Shield Bunkers on East & West Mid-Lane Approaches
-  for (const bx of [-16.2, 16.2]) {
-    addStaticBox(bx, 0.92, 0, 2.0, 1.85, 4.6, wallMat);
-    addStaticBox(bx, 2.05, 0, 2.35, 0.24, 4.9, steelMat);
-    addStaticBox(bx + (bx < 0 ? 1.05 : -1.05), 1.45, 0, 0.08, 0.14, 3.6, beaconMat, false);
+  for (const bx of [-15.8, 15.8]) {
+    addStaticBox(bx, 0.92, 0, 2.0, 1.85, 4.4, wallMat);
+    addStaticBox(bx, 2.05, 0, 2.35, 0.24, 4.7, steelMat);
+    addStaticBox(bx + (bx < 0 ? 1.05 : -1.05), 1.45, 0, 0.08, 0.14, 3.4, beaconMat, false);
     coverPoints.push({ x: bx, z: 0 });
   }
 
-  // Tactical Jersey Barriers & Reinforced Cover Walls around choke points
+  // Tactical Jersey Barriers placed around lower choke points (clear of all 4 ramp entrances)
   const barriers = [
-    { x: -12, z: -7, w: 3.8, h: 1.55, d: 0.75 },
-    { x: 12, z: -7, w: 3.8, h: 1.55, d: 0.75 },
-    { x: -12, z: 7, w: 3.8, h: 1.55, d: 0.75 },
-    { x: 12, z: 7, w: 3.8, h: 1.55, d: 0.75 },
-    { x: 0, z: -10.5, w: 4.4, h: 1.65, d: 0.8 },
-    { x: 0, z: 10.5, w: 4.4, h: 1.65, d: 0.8 }
+    { x: -15.2, z: -5.2, w: 3.4, h: 1.5, d: 0.75 },
+    { x: 15.2, z: -5.2, w: 3.4, h: 1.5, d: 0.75 },
+    { x: -15.2, z: 5.2, w: 3.4, h: 1.5, d: 0.75 },
+    { x: 15.2, z: 5.2, w: 3.4, h: 1.5, d: 0.75 },
+    { x: 0, z: -10.5, w: 4.2, h: 1.6, d: 0.8 },
+    { x: 0, z: 10.5, w: 4.2, h: 1.6, d: 0.8 }
   ];
   for (const b of barriers) {
     addStaticBox(b.x, b.h / 2, b.z, b.w, b.h, b.d, wallMat);

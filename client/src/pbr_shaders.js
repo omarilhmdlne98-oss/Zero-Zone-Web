@@ -22,6 +22,16 @@ export const BATTLEFIELD_PBR_PRESETS = {
     "ao_strength": 0.85,
     "emissive_hex": "#000000"
   },
+  "catwalk_grate": {
+    "id": "catwalk_grate",
+    "name": "Perforated Steel Catwalk Grate",
+    "base_color_hex": "#3e4856",
+    "roughness": 0.4,
+    "metallic": 0.86,
+    "rim_strength": 0.36,
+    "ao_strength": 0.86,
+    "emissive_hex": "#38bdf8"
+  },
   "overwatch_alloy": {
     "id": "overwatch_alloy",
     "name": "Overwatch Tower Alloy",
@@ -59,10 +69,50 @@ export const TACTICAL_STRUCTURE_SPECS = [
     "id": "overwatch_tower",
     "name": "Armored Overwatch Guard Tower",
     "category": "VerticalSightline",
-    "width_m": 3.6,
-    "height_m": 5.8,
-    "depth_m": 3.6,
+    "width_m": 4.0,
+    "height_m": 4.2,
+    "depth_m": 4.0,
     "material_preset": "overwatch_alloy",
+    "destructible": false
+  },
+  {
+    "id": "perimeter_catwalk",
+    "name": "Perimeter Steel Catwalk Loop (x4)",
+    "category": "UpperCatwalk",
+    "width_m": 35.0,
+    "height_m": 0.28,
+    "depth_m": 3.2,
+    "material_preset": "catwalk_grate",
+    "destructible": false
+  },
+  {
+    "id": "central_cross_bridge",
+    "name": "Vault Central Cross-Bridge (x2)",
+    "category": "CrossBridge",
+    "width_m": 13.1,
+    "height_m": 0.26,
+    "depth_m": 3.0,
+    "material_preset": "catwalk_grate",
+    "destructible": false
+  },
+  {
+    "id": "vault_overpass",
+    "name": "Armored Vault Overpass Ring",
+    "category": "OverpassDeck",
+    "width_m": 9.2,
+    "height_m": 0.28,
+    "depth_m": 9.2,
+    "material_preset": "brushed_steel",
+    "destructible": false
+  },
+  {
+    "id": "inclined_ramp",
+    "name": "Smooth 21.6-deg Steel Access Ramp (x4)",
+    "category": "InclinedRamp",
+    "width_m": 2.8,
+    "height_m": 0.24,
+    "depth_m": 11.4,
+    "material_preset": "catwalk_grate",
     "destructible": false
   },
   {
@@ -73,26 +123,6 @@ export const TACTICAL_STRUCTURE_SPECS = [
     "height_m": 1.85,
     "depth_m": 2.2,
     "material_preset": "ballistic_bunker",
-    "destructible": false
-  },
-  {
-    "id": "steel_gantry",
-    "name": "Overhead Industrial Steel Gantry",
-    "category": "SkyBridge",
-    "width_m": 22.0,
-    "height_m": 0.45,
-    "depth_m": 3.0,
-    "material_preset": "brushed_steel",
-    "destructible": false
-  },
-  {
-    "id": "sniper_catwalk",
-    "name": "Elevated Sniper Perch Deck",
-    "category": "HighGround",
-    "width_m": 18.0,
-    "height_m": 3.1,
-    "depth_m": 4.2,
-    "material_preset": "brushed_steel",
     "destructible": false
   }
 ];
