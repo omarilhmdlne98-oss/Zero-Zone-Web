@@ -159,6 +159,49 @@ export function getCatwalkGrateTexture(repX = 4, repY = 4) {
   }, repX, repY);
 }
 
+export function getSandTexture(repX = 12, repY = 6) {
+  return makeCanvasTexture(`sinai_sand_${repX}_${repY}`, 256, (ctx, s) => {
+    ctx.fillStyle = '#d4b27c';
+    ctx.fillRect(0, 0, s, s);
+    // Wind-blown desert dune ripples
+    for (let y = 0; y < s; y += 12) {
+      ctx.fillStyle = (y / 12) % 2 === 0 ? 'rgba(229,198,144,0.28)' : 'rgba(176,138,84,0.22)';
+      ctx.fillRect(0, y, s, 6);
+    }
+    for (let i = 0; i < 2400; i++) {
+      const shade = 168 + Math.floor(Math.random() * 55);
+      ctx.fillStyle = `rgb(${shade},${Math.floor(shade * 0.84)},${Math.floor(shade * 0.58)})`;
+      ctx.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 3, 2);
+    }
+  }, repX, repY);
+}
+
+export function getWaterTexture(repX = 10, repY = 2) {
+  return makeCanvasTexture(`suez_water_${repX}_${repY}`, 256, (ctx, s) => {
+    ctx.fillStyle = '#1e5c68';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 420; i++) {
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(125,211,224,0.22)' : 'rgba(15,62,74,0.3)';
+      ctx.fillRect(Math.random() * s, Math.random() * s, 14 + Math.random() * 24, 2);
+    }
+  }, repX, repY);
+}
+
+export function getSandbagTexture(repX = 4, repY = 2) {
+  return makeCanvasTexture(`sandbag_${repX}_${repY}`, 128, (ctx, s) => {
+    ctx.fillStyle = '#b99d6e';
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = '#755e3b';
+    ctx.lineWidth = 2;
+    for (let y = 0; y < s; y += 24) {
+      const offset = (y / 24) % 2 === 0 ? 0 : 16;
+      for (let x = -16; x < s + 16; x += 32) {
+        ctx.strokeRect(x + offset, y + 1, 30, 22);
+      }
+    }
+  }, repX, repY);
+}
+
 // --- Detailed 3D Tactical Weapons ---
 export function createWeaponMesh(weaponId = 'rifle') {
   const gun = new THREE.Group();
@@ -558,30 +601,30 @@ export function createVaultStructure() {
   const cautionTex = getCautionTexture(4, 1);
 
   const armorMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: steelTex, color: 0x303946 }),
-    'vault_core'
+    new THREE.MeshStandardMaterial({ map: steelTex, color: 0x5c6452 }),
+    'pontoon_steel'
   );
   const trimMat = new THREE.MeshStandardMaterial({ map: cautionTex, roughness: 0.55, metalness: 0.2 });
-  const ringMat = new THREE.MeshStandardMaterial({ color: 0x2dd4bf, emissive: 0x2dd4bf, emissiveIntensity: 2.2 });
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 2.0 });
 
-  const core = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.6, 4.2), armorMat);
-  core.position.y = 2.3;
+  const core = new THREE.Mesh(new THREE.BoxGeometry(3.8, 4.2, 3.8), armorMat);
+  core.position.y = 2.52;
   core.castShadow = true;
   core.receiveShadow = true;
 
-  const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.35, 4.8), trimMat);
-  basePlinth.position.y = 0.175;
+  const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.35, 4.4), trimMat);
+  basePlinth.position.y = 0.58;
   basePlinth.receiveShadow = true;
 
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.4, 4.6), armorMat);
-  cap.position.y = 4.75;
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.38, 4.2), armorMat);
+  cap.position.y = 4.78;
   cap.castShadow = true;
 
-  const ringLow = new THREE.Mesh(new THREE.TorusGeometry(2.55, 0.12, 12, 36), ringMat);
+  const ringLow = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.11, 10, 28), ringMat);
   ringLow.rotation.x = Math.PI / 2;
-  ringLow.position.y = 1.45;
+  ringLow.position.y = 1.65;
   const ringHigh = ringLow.clone();
-  ringHigh.position.y = 3.35;
+  ringHigh.position.y = 3.55;
 
   group.add(core, basePlinth, cap, ringLow, ringHigh);
   group.userData.rings = [ringLow, ringHigh];
@@ -592,37 +635,45 @@ export function createArenaEnvironment() {
   const group = new THREE.Group();
   const colliders = [];
   const coverPoints = [];
+  const radarDishes = [];
   const stanchionPositions = [];
+  const sandbagInstances = [];
 
-  const concreteMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getConcreteTexture(10, 10) }),
-    'weathered_concrete'
+  const sandMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getSandTexture(12, 5), color: 0xebd1a7 }),
+    'sinai_sand'
+  );
+  const bermMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getSandTexture(6, 2), color: 0xd1ac72 }),
+    'berm_earth'
+  );
+  const bunkerMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getConcreteTexture(4, 2), color: 0xc2b092 }),
+    'desert_concrete'
   );
   const wallMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getConcreteTexture(6, 2), color: 0x86919e }),
-    'ballistic_bunker'
+    new THREE.MeshStandardMaterial({ map: getConcreteTexture(8, 2), color: 0xbaa686 }),
+    'desert_concrete'
+  );
+  const pontoonMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getSteelTexture(3, 2), color: 0x626b54 }),
+    'pontoon_steel'
   );
   const steelMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getSteelTexture(3, 1), color: 0x4b5666 }),
+    new THREE.MeshStandardMaterial({ map: getSteelTexture(3, 1), color: 0x726d60 }),
     'brushed_steel'
   );
   const grateMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getCatwalkGrateTexture(6, 2), color: 0x627082 }),
+    new THREE.MeshStandardMaterial({ map: getCatwalkGrateTexture(6, 2), color: 0x7a7465 }),
     'catwalk_grate'
   );
-  const towerMat = applyBattlefieldPBRShader(
-    new THREE.MeshStandardMaterial({ map: getSteelTexture(2, 2), color: 0x364150 }),
-    'overwatch_alloy'
-  );
-  const cautionMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(4, 1), roughness: 0.55, metalness: 0.22 });
-  const beaconMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 2.4 });
-  const amberBeaconMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 2.1 });
-
-  // Main Tactical Floor (48x48m)
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(48, 1, 48), concreteMat);
-  floor.position.y = -0.5;
-  floor.receiveShadow = true;
-  group.add(floor);
+  const sandbagMat = new THREE.MeshStandardMaterial({ map: getSandbagTexture(2, 1), color: 0xcbb07f, roughness: 0.9, metalness: 0.04 });
+  const cautionMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(4, 1), roughness: 0.55, metalness: 0.2 });
+  const slitMat = new THREE.MeshBasicMaterial({ color: 0x151311 });
+  const treadMat = new THREE.MeshStandardMaterial({ color: 0x6a573d, roughness: 0.95, metalness: 0.05 });
+  const floatMat = new THREE.MeshStandardMaterial({ color: 0x434d3a, roughness: 0.6, metalness: 0.45 });
+  const beaconMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 1.9 });
+  const amberBeaconMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 1.8 });
 
   const addStaticBox = (x, y, z, w, h, d, mat, registerCollider = true, rx = 0, rz = 0, castsShadow = true) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -638,104 +689,178 @@ export function createArenaEnvironment() {
     return mesh;
   };
 
-  // Perimeter Armored Concrete Compound Walls
-  addStaticBox(0, 3.0, -24, 48, 6.0, 1.0, wallMat, true, 0, 0, false);
-  addStaticBox(0, 3.0, 24, 48, 6.0, 1.0, wallMat, true, 0, 0, false);
-  addStaticBox(-24, 3.0, 0, 1.0, 6.0, 48, wallMat, true, 0, 0, false);
-  addStaticBox(24, 3.0, 0, 1.0, 6.0, 48, wallMat, true, 0, 0, false);
+  // --- 1. Procedural Desert Sand Terrain (West Bank z>4.5, East Bank z<-4.5) + Dune Ripples ---
+  const buildDesertBank = (zCenter, depth) => {
+    const geo = new THREE.PlaneGeometry(48, depth, 28, 12);
+    geo.rotateX(-Math.PI / 2);
+    const posAttr = geo.attributes.position;
+    for (let i = 0; i < posAttr.count; i++) {
+      const vx = posAttr.getX(i);
+      const vz = posAttr.getZ(i) + zCenter;
+      // Keep pontoon road corridors (x = +-9.5) and outer ramp lanes flat for clean collider match
+      const nearRoad = Math.min(Math.abs(vx + 9.5), Math.abs(vx - 9.5), Math.abs(vx + 19.5), Math.abs(vx - 19.5)) < 3.0;
+      const nearCanal = Math.abs(vz) < 6.8;
+      if (!nearRoad && !nearCanal) {
+        const dune = Math.sin(vx * 0.24) * Math.cos(vz * 0.28) * 0.14 + Math.sin(vx * 0.55 + vz * 0.35) * 0.04;
+        posAttr.setY(i, Math.max(-0.02, dune));
+      }
+    }
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, sandMat);
+    mesh.position.set(0, 0.01, zCenter);
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+  buildDesertBank(14.25, 19.5);
+  buildDesertBank(-14.25, 19.5);
 
-  // --- Interconnected Upper Combat Network (Exported from Static-Recomp-Native) ---
-  // 4 Corner Towers, 4 Perimeter Catwalks, Vault Overpass Ring, 2 Central Cross-Bridges, 4 Smooth Inclined Ramps
+  // Physics bank & canal floor colliders
+  colliders.push({ x: 0, y: -0.5, z: 14.25, hx: 24, hy: 0.5, hz: 9.75, rx: 0, rz: 0 });
+  colliders.push({ x: 0, y: -0.5, z: -14.25, hx: 24, hy: 0.5, hz: 9.75, rx: 0, rz: 0 });
+  colliders.push({ x: 0, y: -1.02, z: 0, hx: 24, hy: 0.5, hz: 4.5, rx: 0, rz: 0 });
+
+  // Tank Tread Tracks leading across West Bank -> Pontoon Bridges -> East Bank Sand Berm Breaches
+  for (const bx of [-9.5, 9.5]) {
+    for (const dx of [-1.05, 1.05]) {
+      addStaticBox(bx + dx, 0.02, 15.2, 0.58, 0.02, 16.5, treadMat, false, 0, 0, false);
+      addStaticBox(bx + dx, 0.02, -14.8, 0.58, 0.02, 16.5, treadMat, false, 0, 0, false);
+    }
+  }
+
+  // --- 2. Central Suez Canal Water Channel (z in [-4.5, 4.5]) + Sloped Quay Banks ---
+  const canalBedMesh = new THREE.Mesh(new THREE.BoxGeometry(48, 0.2, 9.2), bermMat);
+  canalBedMesh.position.set(0, -0.62, 0);
+  canalBedMesh.receiveShadow = true;
+  group.add(canalBedMesh);
+
+  const waterMat = new THREE.MeshStandardMaterial({
+    map: getWaterTexture(10, 2),
+    color: 0x2a7a85,
+    roughness: 0.2,
+    metalness: 0.35,
+    transparent: true,
+    opacity: 0.88
+  });
+  const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(48, 9.0), waterMat);
+  waterMesh.rotation.x = -Math.PI / 2;
+  waterMesh.position.set(0, -0.18, 0);
+  waterMesh.receiveShadow = true;
+  waterMesh.castShadow = false;
+  group.add(waterMesh);
+
+  // Concrete Seawall Quays + Walkable Exit Ramps along North/South canal edges
+  addStaticBox(0, -0.26, 4.65, 48, 0.54, 0.9, bunkerMat, true, -0.38, 0, false);
+  addStaticBox(0, -0.26, -4.65, 48, 0.54, 0.9, bunkerMat, true, 0.38, 0, false);
+
+  // Central Command Relay Pontoon Platform (supports Vault Core at x=0, z=0)
+  addStaticBox(0, 0.21, 0, 5.6, 0.42, 5.6, pontoonMat, true, 0, 0, false);
+
+  // --- 3. Perimeter Compound Boundary Walls (Sand-colored desert perimeter) ---
+  addStaticBox(0, 2.8, -24, 48, 5.6, 1.0, wallMat, true, 0, 0, false);
+  addStaticBox(0, 2.8, 24, 48, 5.6, 1.0, wallMat, true, 0, 0, false);
+  addStaticBox(-24, 2.8, 0, 1.0, 5.6, 48, wallMat, true, 0, 0, false);
+  addStaticBox(24, 2.8, 0, 1.0, 5.6, 48, wallMat, true, 0, 0, false);
+
+  // --- 4. East Bank Sand Berm Rampart (iconic sloped Bar-Lev sand wall with 2 breaches at x=±9.5) ---
+  const bermSpans = [
+    { x: -16.8, w: 8.8 },
+    { x: 0.0, w: 13.6 },
+    { x: 16.8, w: 8.8 }
+  ];
+  for (const bs of bermSpans) {
+    // Solid compacted core underneath walkable berm crest (blocks fire & provides cover behind breaches)
+    addStaticBox(bs.x, 1.92, -13.5, bs.w, 3.84, 3.0, bermMat, true, 0, 0, false);
+    // Angled south-facing & north-facing desert sand slopes (2GB VRAM castShadow = false)
+    addStaticBox(bs.x, 1.9, -11.3, bs.w, 0.6, 4.4, bermMat, false, -0.76, 0, false);
+    addStaticBox(bs.x, 1.9, -15.7, bs.w, 0.6, 4.4, bermMat, false, 0.76, 0, false);
+    // Low sandbag crest parapet along south-facing edge for firing cover
+    for (let sx = bs.x - bs.w * 0.42; sx <= bs.x + bs.w * 0.42; sx += 1.45) {
+      sandbagInstances.push([sx, 4.42, -12.05, 0]);
+    }
+  }
+
+  // --- 5. Multi-Tier Bridges, Berm Crest, Observation/Radar Towers & Ramps ---
   const topY = UPPER_COMBAT_NETWORK.upper_deck_y;
-
   for (const seg of UPPER_COMBAT_NETWORK.segments) {
     const mat =
-      seg.kind === 'tower'
-        ? towerMat
-        : seg.kind === 'vault_overpass'
-          ? steelMat
-          : grateMat;
+      seg.kind === 'pontoon'
+        ? pontoonMat
+        : seg.kind === 'berm_crest'
+          ? bermMat
+          : seg.kind === 'tower'
+            ? bunkerMat
+            : grateMat;
 
-    // Disable real-time shadow casting on catwalk grating, cross-bridges, and ramps (2GB VRAM optimization)
     const deckCastsShadow = seg.kind === 'tower';
     const deckCenterY = seg.y - seg.height * 0.5;
     addStaticBox(seg.x, deckCenterY, seg.z, seg.width, seg.height, seg.depth, mat, true, seg.rx, seg.rz, deckCastsShadow);
 
-    if (seg.kind === 'tower') {
-      // 4 reinforced tower support columns + glowing tactical beacon
-      for (const ox of [-1.6, 1.6]) {
-        for (const oz of [-1.6, 1.6]) {
-          addStaticBox(seg.x + ox, (topY - 0.16) * 0.5, seg.z + oz, 0.36, topY - 0.16, 0.36, towerMat, true, 0, 0, true);
+    if (seg.kind === 'pontoon') {
+      if (seg.depth > seg.width) {
+        // Main Pontoon Bridge floats + approach ramps + yellow/steel side curbs
+        for (const fz of [-3.4, 0, 3.4]) {
+          addStaticBox(seg.x, -0.02, fz, seg.width + 0.55, 0.34, 1.4, floatMat, false, 0, 0, false);
+        }
+        // Gentle approach ramps connecting West & East banks (y=0) to Pontoon deck (y=0.42)
+        addStaticBox(seg.x, 0.14, 5.9, seg.width, 0.2, 1.75, pontoonMat, true, 0.25, 0, false);
+        addStaticBox(seg.x, 0.14, -5.9, seg.width, 0.2, 1.75, pontoonMat, true, -0.25, 0, false);
+        // Side curbs + safety stanchions (gap at z=0 inner side for central causeway)
+        addStaticBox(seg.x + (seg.x < 0 ? -1.98 : 1.98), 0.72, 0, 0.16, 0.56, 9.8, cautionMat, false, 0, 0, false);
+        for (const dz of [-4.2, -2.1, 2.1, 4.2]) {
+          stanchionPositions.push([seg.x - 1.98, 0.68, dz], [seg.x + 1.98, 0.68, dz]);
+        }
+      } else {
+        // Causeway connecting Pontoon Bridges to Central Vault Island
+        addStaticBox(seg.x, -0.02, 0, seg.width * 0.7, 0.34, 1.6, floatMat, false, 0, 0, false);
+        for (const dz of [-1.22, 1.22]) {
+          addStaticBox(seg.x, 0.64, dz, seg.width - 0.3, 0.08, 0.12, cautionMat, false, 0, 0, false);
         }
       }
-      addStaticBox(seg.x, topY + 1.08, seg.z + (seg.z < 0 ? -1.85 : 1.85), 3.6, 0.1, 0.1, amberBeaconMat, false, 0, 0, false);
+    } else if (seg.kind === 'tower') {
+      // 4 Concrete support columns
+      for (const ox of [-1.55, 1.55]) {
+        for (const oz of [-1.55, 1.55]) {
+          addStaticBox(seg.x + ox, (topY - 0.16) * 0.5, seg.z + oz, 0.42, topY - 0.16, 0.42, bunkerMat, true, 0, 0, true);
+        }
+      }
+      // Communications / Radar masts on North East-Bank Berm Towers
+      if (seg.z < 0) {
+        addStaticBox(seg.x, topY + 1.35, seg.z, 0.22, 2.7, 0.22, steelMat, false, 0, 0, false);
+        const dishGroup = new THREE.Group();
+        dishGroup.position.set(seg.x, topY + 2.75, seg.z);
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.24, 0.12), steelMat);
+        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), beaconMat);
+        tip.position.y = 0.25;
+        dishGroup.add(bar, tip);
+        group.add(dishGroup);
+        radarDishes.push(dishGroup);
+      } else {
+        addStaticBox(seg.x, topY + 0.95, seg.z + 1.8, 3.6, 0.1, 0.1, amberBeaconMat, false, 0, 0, false);
+      }
     } else if (seg.kind === 'catwalk') {
-      // Under-deck tactical glow trim + support pillars at thirds
       const isNS = seg.width > seg.depth;
-      if (isNS) {
-        addStaticBox(seg.x, topY - 0.32, seg.z + (seg.z < 0 ? 1.55 : -1.55), seg.width - 2, 0.08, 0.08, beaconMat, false, 0, 0, false);
+      if (isNS && seg.width > 12) {
         for (const px of [-14, -5.5, 5.5, 14]) {
-          addStaticBox(px, (topY - 0.28) * 0.5, seg.z, 0.45, topY - 0.28, 0.45, steelMat, true, 0, 0, false);
+          addStaticBox(px, (topY - 0.28) * 0.5, seg.z, 0.45, topY - 0.28, 0.45, bunkerMat, true, 0, 0, false);
         }
-        // Guardrail segments (castShadow = false for 2GB VRAM performance)
-        const railZ = seg.z + (seg.z < 0 ? 1.52 : -1.52);
-        for (const [rxStart, rxEnd] of [[-17.2, -13.4], [-10.0, -1.7], [1.7, 10.0], [13.4, 17.2]]) {
-          const rw = rxEnd - rxStart;
-          const rcx = (rxStart + rxEnd) * 0.5;
-          addStaticBox(rcx, topY + 0.92, railZ, rw, 0.09, 0.1, cautionMat, true, 0, 0, false);
-          addStaticBox(rcx, topY + 0.46, railZ, rw, 0.07, 0.08, steelMat, false, 0, 0, false);
-          stanchionPositions.push([rxStart + 0.2, topY + 0.46, railZ], [rxEnd - 0.2, topY + 0.46, railZ]);
+        const railZ = seg.z + (seg.z < 0 ? 1.42 : -1.42);
+        addStaticBox(seg.x, topY + 0.88, railZ, seg.width - 1.2, 0.09, 0.1, cautionMat, true, 0, 0, false);
+        for (let rx = -16; rx <= 16; rx += 4) {
+          stanchionPositions.push([rx, topY + 0.44, railZ]);
         }
-      } else {
-        addStaticBox(seg.x + (seg.x < 0 ? 1.55 : -1.55), topY - 0.32, seg.z, 0.08, 0.08, seg.depth - 2, beaconMat, false, 0, 0, false);
-        for (const pz of [-13, -5.5, 5.5, 13]) {
-          addStaticBox(seg.x, (topY - 0.28) * 0.5, pz, 0.45, topY - 0.28, 0.45, steelMat, true, 0, 0, false);
-        }
-        const railX = seg.x + (seg.x < 0 ? 1.52 : -1.52);
-        for (const [rzStart, rzEnd] of [[-17.2, -1.7], [1.7, 17.2]]) {
-          const rd = rzEnd - rzStart;
-          const rcz = (rzStart + rzEnd) * 0.5;
-          addStaticBox(railX, topY + 0.92, rcz, 0.1, 0.09, rd, cautionMat, true, 0, 0, false);
-          addStaticBox(railX, topY + 0.46, rcz, 0.08, 0.07, rd, steelMat, false, 0, 0, false);
-          stanchionPositions.push([railX, topY + 0.46, rzStart + 0.2], [railX, topY + 0.46, rzEnd - 0.2]);
-        }
-      }
-    } else if (seg.kind === 'cross_bridge') {
-      const isEW = seg.width > seg.depth;
-      if (isEW) {
-        for (const dz of [-1.42, 1.42]) {
-          addStaticBox(seg.x, topY + 0.92, seg.z + dz, seg.width - 0.6, 0.08, 0.09, cautionMat, true, 0, 0, false);
-          stanchionPositions.push(
-            [seg.x - seg.width * 0.4, topY + 0.46, seg.z + dz],
-            [seg.x, topY + 0.46, seg.z + dz],
-            [seg.x + seg.width * 0.4, topY + 0.46, seg.z + dz]
-          );
-        }
-        addStaticBox(seg.x, topY - 0.28, seg.z, seg.width - 0.8, 0.08, 0.12, beaconMat, false, 0, 0, false);
-      } else {
-        for (const dx of [-1.42, 1.42]) {
-          addStaticBox(seg.x + dx, topY + 0.92, seg.z, 0.09, 0.08, seg.depth - 0.6, cautionMat, true, 0, 0, false);
-          stanchionPositions.push(
-            [seg.x + dx, topY + 0.46, seg.z - seg.depth * 0.4],
-            [seg.x + dx, topY + 0.46, seg.z],
-            [seg.x + dx, topY + 0.46, seg.z + seg.depth * 0.4]
-          );
-        }
-        addStaticBox(seg.x, topY - 0.28, seg.z, 0.12, 0.08, seg.depth - 0.8, beaconMat, false, 0, 0, false);
       }
     } else if (seg.kind === 'ramp') {
-      // Sloped steel side stringers + safety handrails aligned to ramp pitch (no real-time shadow casting)
       for (const sideX of [-seg.width * 0.5 + 0.06, seg.width * 0.5 - 0.06]) {
         addStaticBox(seg.x + sideX, seg.y + 0.78, seg.z, 0.09, 0.09, seg.depth, cautionMat, true, seg.rx, seg.rz, false);
         addStaticBox(seg.x + sideX, seg.y + 0.36, seg.z, 0.07, 0.07, seg.depth, steelMat, false, seg.rx, seg.rz, false);
       }
-      addStaticBox(seg.x, seg.y + 0.03, seg.z, 0.16, 0.03, seg.depth - 0.8, beaconMat, false, seg.rx, seg.rz, false);
     }
   }
 
-  // Batch all guardrail stanchions into a single InstancedMesh (castShadow = false for 2GB VRAM)
+  // Batch stanchions in 1 InstancedMesh (2GB VRAM safe)
   if (stanchionPositions.length > 0) {
-    const postGeo = new THREE.BoxGeometry(0.08, 0.92, 0.08);
+    const postGeo = new THREE.BoxGeometry(0.08, 0.88, 0.08);
     const postInst = new THREE.InstancedMesh(postGeo, steelMat, stanchionPositions.length);
     const dummy = new THREE.Object3D();
     stanchionPositions.forEach(([px, py, pz], idx) => {
@@ -748,30 +873,63 @@ export function createArenaEnvironment() {
     group.add(postInst);
   }
 
-  // Reinforced Ballistic Shield Bunkers on East & West Mid-Lane Approaches
-  for (const bx of [-15.8, 15.8]) {
-    addStaticBox(bx, 0.92, 0, 2.0, 1.85, 4.4, wallMat, true, 0, 0, true);
-    addStaticBox(bx, 2.05, 0, 2.35, 0.24, 4.7, steelMat, true, 0, 0, false);
-    addStaticBox(bx + (bx < 0 ? 1.05 : -1.05), 1.45, 0, 0.08, 0.14, 3.4, beaconMat, false, 0, 0, false);
-    coverPoints.push({ x: bx, z: 0 });
-  }
-
-  // Tactical Jersey Barriers placed around lower choke points (clear of all 4 ramp entrances)
-  const barriers = [
-    { x: -15.2, z: -5.2, w: 3.4, h: 1.5, d: 0.75 },
-    { x: 15.2, z: -5.2, w: 3.4, h: 1.5, d: 0.75 },
-    { x: -15.2, z: 5.2, w: 3.4, h: 1.5, d: 0.75 },
-    { x: 15.2, z: 5.2, w: 3.4, h: 1.5, d: 0.75 },
-    { x: 0, z: -10.5, w: 4.2, h: 1.6, d: 0.8 },
-    { x: 0, z: 10.5, w: 4.2, h: 1.6, d: 0.8 }
+  // --- 6. 4 Reinforced Bar-Lev Desert Concrete Bunkers with Dark Firing Slits ---
+  const bunkerPositions = [
+    { x: -14.8, z: -9.0, facingZ: 1 },  // East Bank West Breach guard bunker (faces canal)
+    { x: 14.8, z: -9.0, facingZ: 1 },   // East Bank East Breach guard bunker (faces canal)
+    { x: -14.8, z: 10.2, facingZ: -1 }, // West Bank West Staging bunker (faces canal)
+    { x: 14.8, z: 10.2, facingZ: -1 }   // West Bank East Staging bunker (faces canal)
   ];
-  for (const b of barriers) {
-    addStaticBox(b.x, b.h / 2, b.z, b.w, b.h, b.d, wallMat, true, 0, 0, true);
-    addStaticBox(b.x, b.h + 0.08, b.z, b.w, 0.14, b.d * 0.95, cautionMat, false, 0, 0, false);
-    coverPoints.push({ x: b.x, z: b.z });
+  for (const bk of bunkerPositions) {
+    // Lower bunker base wall + overhanging concrete blast roof + corner pillars leaving wide firing slit
+    addStaticBox(bk.x, 0.55, bk.z, 4.4, 1.1, 3.0, bunkerMat, true, 0, 0, true);
+    addStaticBox(bk.x, 2.15, bk.z, 4.8, 0.42, 3.4, bunkerMat, true, 0, 0, true);
+    addStaticBox(bk.x - 1.85, 1.52, bk.z, 0.7, 0.85, 2.9, bunkerMat, true, 0, 0, false);
+    addStaticBox(bk.x + 1.85, 1.52, bk.z, 0.7, 0.85, 2.9, bunkerMat, true, 0, 0, false);
+    addStaticBox(bk.x, 1.52, bk.z - bk.facingZ * 1.15, 3.0, 0.85, 0.65, bunkerMat, true, 0, 0, false);
+    // Dark recessed firing slit visual interior
+    addStaticBox(bk.x, 1.52, bk.z + bk.facingZ * 0.45, 2.95, 0.62, 1.6, slitMat, false, 0, 0, false);
+    // Sandbag apron in front of bunker firing slit
+    for (let ox = -1.6; ox <= 1.6; ox += 0.8) {
+      sandbagInstances.push([bk.x + ox, 0.24, bk.z + bk.facingZ * 1.75, 0]);
+    }
+    coverPoints.push({ x: bk.x, z: bk.z });
   }
 
-  return { group, colliders, coverPoints };
+  // --- 7. Tactical Trenches & Sandbag Firing Barricades on West & East Banks ---
+  const trenches = [
+    { x: -4.2, z: 7.4, w: 4.2, h: 1.25, d: 0.9 },
+    { x: 4.2, z: 7.4, w: 4.2, h: 1.25, d: 0.9 },
+    { x: 0.0, z: 12.2, w: 4.6, h: 1.35, d: 0.95 },
+    { x: -4.2, z: -7.4, w: 4.2, h: 1.25, d: 0.9 },
+    { x: 4.2, z: -7.4, w: 4.2, h: 1.25, d: 0.9 },
+    { x: 0.0, z: -17.0, w: 4.8, h: 1.35, d: 0.95 }
+  ];
+  for (const tr of trenches) {
+    addStaticBox(tr.x, tr.h * 0.5, tr.z, tr.w, tr.h, tr.d, bunkerMat, true, 0, 0, true);
+    for (let sx = -tr.w * 0.4; sx <= tr.w * 0.4; sx += 0.82) {
+      sandbagInstances.push([tr.x + sx, tr.h + 0.18, tr.z, 0]);
+    }
+    coverPoints.push({ x: tr.x, z: tr.z });
+  }
+
+  // Batch all Sandbag instances into a single InstancedMesh (2GB VRAM optimal)
+  if (sandbagInstances.length > 0) {
+    const bagGeo = new THREE.BoxGeometry(0.76, 0.34, 0.52);
+    const bagInst = new THREE.InstancedMesh(bagGeo, sandbagMat, sandbagInstances.length);
+    const dummy = new THREE.Object3D();
+    sandbagInstances.forEach(([sx, sy, sz, ry], idx) => {
+      dummy.position.set(sx, sy, sz);
+      dummy.rotation.set(0, ry, 0);
+      dummy.updateMatrix();
+      bagInst.setMatrixAt(idx, dummy.matrix);
+    });
+    bagInst.castShadow = false;
+    bagInst.receiveShadow = true;
+    group.add(bagInst);
+  }
+
+  return { group, colliders, coverPoints, radarDishes };
 }
 
 export function createJumpPad(x, z) {

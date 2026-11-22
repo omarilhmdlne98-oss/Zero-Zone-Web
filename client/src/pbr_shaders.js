@@ -61,6 +61,46 @@ export const BATTLEFIELD_PBR_PRESETS = {
     "rim_strength": 0.45,
     "ao_strength": 0.82,
     "emissive_hex": "#2dd4bf"
+  },
+  "sinai_sand": {
+    "id": "sinai_sand",
+    "name": "Sinai Desert Sand",
+    "base_color_hex": "#d9b984",
+    "roughness": 0.92,
+    "metallic": 0.02,
+    "rim_strength": 0.12,
+    "ao_strength": 0.94,
+    "emissive_hex": "#f5deb3"
+  },
+  "berm_earth": {
+    "id": "berm_earth",
+    "name": "Compacted East Bank Berm Earth",
+    "base_color_hex": "#c29b61",
+    "roughness": 0.94,
+    "metallic": 0.02,
+    "rim_strength": 0.10,
+    "ao_strength": 0.95,
+    "emissive_hex": "#e8c488"
+  },
+  "desert_concrete": {
+    "id": "desert_concrete",
+    "name": "Bar-Lev Reinforced Desert Concrete",
+    "base_color_hex": "#b7a58b",
+    "roughness": 0.86,
+    "metallic": 0.08,
+    "rim_strength": 0.15,
+    "ao_strength": 0.90,
+    "emissive_hex": "#f0dfc0"
+  },
+  "pontoon_steel": {
+    "id": "pontoon_steel",
+    "name": "Olive Tactical Pontoon Steel",
+    "base_color_hex": "#5f6852",
+    "roughness": 0.46,
+    "metallic": 0.68,
+    "rim_strength": 0.24,
+    "ao_strength": 0.86,
+    "emissive_hex": "#e2c893"
   }
 };
 
