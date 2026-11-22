@@ -104,6 +104,16 @@
     .kf-entry.hs { border-right-color: #ef4444; }
     .kf-hs-tag { color: #f87171; font-weight: 800; margin-left: 4px; }
 
+    /* Weapon Inspection Telemetry Panel ([I]) */
+    #weapon-inspect-panel {
+      position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%);
+      background: rgba(9, 15, 24, 0.88); border: 1px solid rgba(56, 226, 255, 0.45);
+      border-radius: 10px; padding: 10px 16px; min-width: 310px; text-align: center;
+      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.74rem; color: #cbd5e1;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.55); opacity: 0; transition: opacity 0.16s ease;
+    }
+    #weapon-inspect-panel .wi-title { color: #38e2ff; font-weight: 800; font-size: 0.84rem; margin-bottom: 4px; letter-spacing: 0.8px; }
+
     /* Bottom Vitals & Weapons */
     .hud-bottom-left { position: absolute; bottom: 16px; left: 16px; display: flex; flex-direction: column; width: 240px; }
     .hud-bottom-right {
@@ -200,6 +210,7 @@
     </div>
     <div id="hitmarker"></div>
     <div id="hit-callout">HEADSHOT 2.2x</div>
+    <div id="weapon-inspect-panel"></div>
 
     <div class="hud-bottom-left hud-box">
       <div style="display:flex;justify-content:space-between;font-size:0.76rem;font-weight:700;">
@@ -213,7 +224,7 @@
       <div class="bar-bg"><div class="bar-fill stam-fill" id="hud-stam-bar" style="width:100%"></div></div>
       <div style="font-size:0.74rem;" id="hud-cd-text">Ability [G]: Ready</div>
       <div class="bar-bg"><div class="bar-fill cd-fill" id="hud-cd-bar" style="width:100%"></div></div>
-      <div class="hint">[Q/E] Lean &bull; [C] Crouch/Slide &bull; [F] Vault</div>
+      <div class="hint">[Q/E] Lean &bull; [C] Crouch &bull; [I] Inspect &bull; [F] Vault</div>
     </div>
 
     <div class="hud-bottom-right">

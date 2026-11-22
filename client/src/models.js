@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyBattlefieldPBRShader } from './pbr_shaders.js';
 
 const SPECTRE_CLOAK_VERT = `
   varying vec3 vNormal;
@@ -491,7 +492,10 @@ export function createVaultStructure() {
   const steelTex = getSteelTexture(2, 2);
   const cautionTex = getCautionTexture(4, 1);
 
-  const armorMat = new THREE.MeshStandardMaterial({ map: steelTex, color: 0x303946, metalness: 0.72, roughness: 0.36 });
+  const armorMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: steelTex, color: 0x303946 }),
+    'vault_core'
+  );
   const trimMat = new THREE.MeshStandardMaterial({ map: cautionTex, roughness: 0.55, metalness: 0.2 });
   const ringMat = new THREE.MeshStandardMaterial({ color: 0x2dd4bf, emissive: 0x2dd4bf, emissiveIntensity: 2.2 });
 
@@ -524,11 +528,25 @@ export function createArenaEnvironment() {
   const colliders = [];
   const coverPoints = [];
 
-  const concreteMat = new THREE.MeshStandardMaterial({ map: getConcreteTexture(10, 10), roughness: 0.86, metalness: 0.06 });
-  const wallMat = new THREE.MeshStandardMaterial({ map: getConcreteTexture(6, 2), color: 0x86919e, roughness: 0.84, metalness: 0.1 });
-  const steelMat = new THREE.MeshStandardMaterial({ map: getSteelTexture(3, 1), color: 0x4b5666, roughness: 0.42, metalness: 0.76 });
+  const concreteMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getConcreteTexture(10, 10) }),
+    'weathered_concrete'
+  );
+  const wallMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getConcreteTexture(6, 2), color: 0x86919e }),
+    'ballistic_bunker'
+  );
+  const steelMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getSteelTexture(3, 1), color: 0x4b5666 }),
+    'brushed_steel'
+  );
+  const towerMat = applyBattlefieldPBRShader(
+    new THREE.MeshStandardMaterial({ map: getSteelTexture(2, 2), color: 0x364150 }),
+    'overwatch_alloy'
+  );
   const cautionMat = new THREE.MeshStandardMaterial({ map: getCautionTexture(4, 1), roughness: 0.55, metalness: 0.22 });
   const beaconMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 2.4 });
+  const amberBeaconMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 2.1 });
 
   // Main Tactical Floor (48x48m)
   const floor = new THREE.Mesh(new THREE.BoxGeometry(48, 1, 48), concreteMat);
@@ -573,6 +591,36 @@ export function createArenaEnvironment() {
     }
     // Emissive Tactical Strip under deck
     addStaticBox(0, 2.88, zDeck - side * 2.05, 16, 0.09, 0.08, beaconMat, false);
+  }
+
+  // Corner Armored Overwatch Guard Towers (Leonida/XenonRecomp Tactical Structures)
+  for (const tx of [-19.5, 19.5]) {
+    for (const tz of [-19.5, 19.5]) {
+      // 4 reinforced steel columns
+      for (const ox of [-1.4, 1.4]) {
+        for (const oz of [-1.4, 1.4]) {
+          addStaticBox(tx + ox, 2.4, tz + oz, 0.36, 4.8, 0.36, towerMat);
+        }
+      }
+      // Overwatch deck + armored parapet + tactical spotlight beacon
+      addStaticBox(tx, 4.85, tz, 3.6, 0.3, 3.6, towerMat);
+      addStaticBox(tx, 5.45, tz + (tz < 0 ? 1.68 : -1.68), 3.5, 0.95, 0.22, towerMat);
+      addStaticBox(tx + (tx < 0 ? 1.68 : -1.68), 5.45, tz, 0.22, 0.95, 3.5, towerMat);
+      addStaticBox(tx, 6.02, tz + (tz < 0 ? 1.72 : -1.72), 2.2, 0.1, 0.1, amberBeaconMat, false);
+    }
+  }
+
+  // Overhead Industrial Steel Gantry spanning East-West above the central Vault
+  addStaticBox(0, 7.2, 0, 44, 0.45, 2.6, steelMat, false);
+  addStaticBox(0, 6.9, 1.32, 42, 0.1, 0.08, beaconMat, false);
+  addStaticBox(0, 6.9, -1.32, 42, 0.1, 0.08, beaconMat, false);
+
+  // Reinforced Ballistic Shield Bunkers on East & West Mid-Lane Approaches
+  for (const bx of [-16.2, 16.2]) {
+    addStaticBox(bx, 0.92, 0, 2.0, 1.85, 4.6, wallMat);
+    addStaticBox(bx, 2.05, 0, 2.35, 0.24, 4.9, steelMat);
+    addStaticBox(bx + (bx < 0 ? 1.05 : -1.05), 1.45, 0, 0.08, 0.14, 3.6, beaconMat, false);
+    coverPoints.push({ x: bx, z: 0 });
   }
 
   // Tactical Jersey Barriers & Reinforced Cover Walls around choke points

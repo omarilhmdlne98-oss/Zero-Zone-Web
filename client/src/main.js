@@ -1029,10 +1029,17 @@ function animate() {
     const stats = OPERATOR_STATS[localState.kit];
 
     if (act.weaponSwitch !== null) {
+      isInspecting = false;
       selectWeapon(act.weaponSwitch);
     }
     if (act.reload) {
+      isInspecting = false;
       startReload();
+    }
+    if (act.inspect && !isReloading && !localState.ads) {
+      isInspecting = !isInspecting;
+      inspectPhase = 0;
+      sfx.radioCue();
     }
     if (fireCooldown > 0) fireCooldown = Math.max(0, fireCooldown - dt);
 
@@ -1181,19 +1188,28 @@ function animate() {
     camera.rotation.x = THREE.MathUtils.clamp(controls.pitch + recoilKickPitch, -1.35, 1.35);
     camera.rotation.z = -currentLean * 0.16;
 
-    // First-Person Viewmodel Sway, ADS Alignment, Recoil & Reload Animation
+    // First-Person Viewmodel Sway, ADS Alignment, Inspect Showcase, Recoil & Reload Animation
+    if (localState.ads) isInspecting = false;
     if (viewmodel) {
-      const targetPos = localState.ads
-        ? new THREE.Vector3(0.0, -0.105, -0.34)
-        : new THREE.Vector3(0.24, -0.22, -0.44);
+      if (isInspecting) inspectPhase += dt;
+      const targetPos = isInspecting
+        ? new THREE.Vector3(0.06, -0.15, -0.46)
+        : localState.ads
+          ? new THREE.Vector3(0.0, -0.105, -0.34)
+          : new THREE.Vector3(0.24, -0.22, -0.44);
       const swayX = Math.cos(bobPhase * 0.5) * (localState.ads ? 0.002 : 0.012);
       const swayY = Math.sin(bobPhase) * (localState.ads ? 0.002 : 0.012) + Math.sin(clock.elapsedTime * 2.1) * 0.003;
       const reloadDrop = isReloading ? -0.18 : 0;
-      viewmodel.position.x = THREE.MathUtils.lerp(viewmodel.position.x, targetPos.x + swayX, Math.min(1, dt * 16));
-      viewmodel.position.y = THREE.MathUtils.lerp(viewmodel.position.y, targetPos.y + swayY + reloadDrop, Math.min(1, dt * 16));
-      viewmodel.position.z = THREE.MathUtils.lerp(viewmodel.position.z, targetPos.z + recoilKickBack, Math.min(1, dt * 20));
-      viewmodel.rotation.x = isReloading ? -0.45 : recoilKickBack * 1.4;
-      viewmodel.rotation.z = isReloading ? 0.4 : 0;
+      viewmodel.position.x = THREE.MathUtils.lerp(viewmodel.position.x, targetPos.x + swayX, Math.min(1, dt * 14));
+      viewmodel.position.y = THREE.MathUtils.lerp(viewmodel.position.y, targetPos.y + swayY + reloadDrop, Math.min(1, dt * 14));
+      viewmodel.position.z = THREE.MathUtils.lerp(viewmodel.position.z, targetPos.z + recoilKickBack, Math.min(1, dt * 18));
+
+      const targetRotX = isReloading ? -0.45 : (isInspecting ? 0.24 + Math.sin(inspectPhase * 1.4) * 0.14 : recoilKickBack * 1.4);
+      const targetRotY = isInspecting ? 0.85 + Math.sin(inspectPhase * 1.1) * 0.35 : 0;
+      const targetRotZ = isReloading ? 0.4 : (isInspecting ? -0.32 + Math.cos(inspectPhase * 1.2) * 0.18 : 0);
+      viewmodel.rotation.x = THREE.MathUtils.lerp(viewmodel.rotation.x, targetRotX, Math.min(1, dt * 12));
+      viewmodel.rotation.y = THREE.MathUtils.lerp(viewmodel.rotation.y, targetRotY, Math.min(1, dt * 12));
+      viewmodel.rotation.z = THREE.MathUtils.lerp(viewmodel.rotation.z, targetRotZ, Math.min(1, dt * 12));
       viewmodel.visible = localState.alive && !(localState.ads && wpn.id === 'railgun');
 
       if (muzzleFlashTimer > 0) {
@@ -1208,6 +1224,7 @@ function animate() {
     // Fire Weapon (supports Full-Auto Rifle & Semi-Auto Railgun/Shotgun)
     const wantsFire = wpn.auto ? (act.fire || act.fireHeld) : act.fire;
     if (wantsFire && localState.alive && !isReloading && fireCooldown <= 0) {
+      isInspecting = false;
       const ammo = weaponAmmo[currentWeaponIdx];
       if (ammo.mag <= 0) {
         startReload();

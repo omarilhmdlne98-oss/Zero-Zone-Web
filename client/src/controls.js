@@ -195,6 +195,7 @@ export class DualControls {
       crouch: this.crouchPressed,
       ability: this.abilityPressed,
       reload: this.reloadPressed,
+      inspect: this.inspectPressed,
       breach: this.breachHeld,
       weaponSwitch: this.weaponSwitch
     };
@@ -203,6 +204,7 @@ export class DualControls {
     this.crouchPressed = false;
     this.abilityPressed = false;
     this.reloadPressed = false;
+    this.inspectPressed = false;
     this.weaponSwitch = null;
     return out;
   }
