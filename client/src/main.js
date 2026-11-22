@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { BloomEffect, EffectComposer, EffectPass, RenderPass } from 'postprocessing';
 import { sfx } from './audio.js';
 import { DualControls } from './controls.js';
 import {
@@ -17,32 +16,66 @@ import {
 import { UPPER_COMBAT_NETWORK, sampleCombatSurfaceY } from './bridge_network.js';
 import { NetworkClient } from './network.js';
 
-// --- Renderer & Cinematic ACES Filmic Lighting (2GB VRAM Optimized) ---
+// --- Global Visible Error Banner (ensures zero silent WebGL or runtime failures) ---
+function showDiagnosticError(msg) {
+  const el = document.getElementById('arena-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+window.addEventListener('error', (ev) => {
+  showDiagnosticError(`Runtime error: ${ev.message || 'Unknown error'}`);
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  const reason = ev.reason?.message || String(ev.reason || 'Promise rejected');
+  showDiagnosticError(`Async error: ${reason}`);
+});
+
+// --- Direct WebGL Renderer & Tactical Daylight/Dusk Lighting (2GB VRAM Optimized) ---
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+let renderer = null;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (err) {
+  showDiagnosticError(`WebGL initialization failed: ${err?.message || 'Unsupported GPU/context'}`);
+  throw err;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.25;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b1220);
-scene.fog = new THREE.FogExp2(0x131d2c, 0.0155);
+scene.background = new THREE.Color(0x1b2838);
+scene.fog = new THREE.FogExp2(0x1b2838, 0.0085);
 
-const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, 160);
+// Lightweight procedural IBL reflection probe so metallic PBR steel & weapons reflect sky instead of black (<0.5MB VRAM)
+try {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x364d68);
+  envScene.add(new THREE.HemisphereLight(0xdbeafe, 0x334155, 2.2));
+  const envRT = pmrem.fromScene(envScene, 0.04);
+  scene.environment = envRT.texture;
+  scene.environmentIntensity = 0.85;
+  pmrem.dispose();
+} catch (err) {
+  console.warn('[Zero-Zone] PMREM environment skipped:', err);
+}
+
+const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, 180);
+camera.position.set(0, 1.68, 14);
 scene.add(camera);
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new EffectPass(camera, new BloomEffect({ intensity: 0.4, luminanceThreshold: 0.85, resolutionScale: 0.5 })));
-
-// Sky Dome + Sun + Hemisphere Fill + Tactical Rim Light
+// Sky Dome + Hemisphere Fill + Directional Sun + Tactical Rim Light
 scene.add(createSkyDome());
-scene.add(new THREE.HemisphereLight(0x88b4e6, 0x262328, 0.85));
+scene.add(new THREE.HemisphereLight(0xdbeafe, 0x334155, 1.35));
 
-const sun = new THREE.DirectionalLight(0xffdfb8, 2.0);
+const sun = new THREE.DirectionalLight(0xffffff, 1.8);
 sun.position.set(22, 34, 18);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -55,7 +88,7 @@ sun.shadow.camera.bottom = -28;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.65);
+const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.55);
 rimLight.position.set(-20, 14, -22);
 scene.add(rimLight);
 
@@ -769,7 +802,9 @@ function detonateBarrel(barrel, attackerName = 'You') {
     if (other === barrel || other.exploded) continue;
     const otherCenter = new THREE.Vector3(other.def.x, other.def.y + 0.62, other.def.z);
     if (otherCenter.distanceTo(center) <= 5.5) {
-      setTimeout(() => detonateBarrel(other, attackerName), 120);
+      setTimeout(() => {
+        if (!localMatchResetting && !other.exploded) detonateBarrel(other, attackerName);
+      }, 120);
     }
   }
 }
@@ -1302,11 +1337,13 @@ function updateTacticalBots(dt, pNew) {
   }
 }
 
+let animateErrorReported = false;
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
 
-  if (running && world && playerBody) {
+  try {
+    if (running && world && playerBody) {
     const move = controls.getMoveInput();
     const act = controls.consumeActions();
     const stats = OPERATOR_STATS[localState.kit];
@@ -1356,7 +1393,8 @@ function animate() {
     const pos = playerBody.translation();
     const vel = playerBody.linvel();
     const horizSpeed = Math.hypot(vel.x, vel.z);
-    const grounded = Math.abs(vel.y) < 0.28;
+    const surfY = sampleCombatSurfaceY(pos.x, pos.z, pos.y - 0.9);
+    const grounded = (pos.y - 0.9 - surfY) < 0.28 && vel.y <= 4.2;
 
     // ADS & Crouch / Slide State
     localState.ads = act.ads && !isReloading;
@@ -1704,7 +1742,14 @@ function animate() {
     if (sh.life <= 0) { scene.remove(sh.mesh); shellCasings.splice(i, 1); }
   }
 
-  composer.render();
+    renderer.render(scene, camera);
+  } catch (err) {
+    if (!animateErrorReported) {
+      animateErrorReported = true;
+      console.error('[Zero-Zone] Render loop error:', err);
+      showArenaError(`Render error: ${err?.message || 'Unexpected frame failure'}`);
+    }
+  }
 }
 
 // --- Direct Auto-Launch & Quick In-Game Class Switch ([F1-F3] / [Tab]) ---
@@ -1716,7 +1761,7 @@ function showArenaError(msg) {
   if (!el) return;
   el.textContent = msg;
   el.style.display = 'block';
-  setTimeout(() => { el.style.display = 'none'; }, 6000);
+  setTimeout(() => { el.style.display = 'none'; }, 7000);
 }
 
 function requestSafePointerLock() {
@@ -1804,7 +1849,6 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 animate();

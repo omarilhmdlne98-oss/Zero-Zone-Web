@@ -40,9 +40,9 @@ export class DualControls {
       if (e.code === 'KeyR') this.reloadPressed = true;
       if (e.code === 'KeyI' && !e.repeat) this.inspectPressed = true;
       if (e.code === 'KeyF') this.breachHeld = true;
-      if (e.code === 'Digit1') this.weaponSwitch = 0;
-      if (e.code === 'Digit2') this.weaponSwitch = 1;
-      if (e.code === 'Digit3') this.weaponSwitch = 2;
+      if (e.code === 'Digit1') { this.weaponSwitch = 0; this._touchWeaponIdx = 0; }
+      if (e.code === 'Digit2') { this.weaponSwitch = 1; this._touchWeaponIdx = 1; }
+      if (e.code === 'Digit3') { this.weaponSwitch = 2; this._touchWeaponIdx = 2; }
       if (e.code === 'F1') { e.preventDefault(); this.classSwitch = 'vanguard'; }
       if (e.code === 'F2') { e.preventDefault(); this.classSwitch = 'spectre'; }
       if (e.code === 'F3') { e.preventDefault(); this.classSwitch = 'juggernaut'; }

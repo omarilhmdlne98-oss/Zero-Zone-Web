@@ -140,23 +140,42 @@ export function applyBattlefieldPBRShader(material, presetId = 'brushed_steel') 
   const rimColor = new THREE.Color(preset.emissive_hex !== '#000000' ? preset.emissive_hex : '#38bdf8');
   const rimStrength = preset.rim_strength;
 
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uRimColor = { value: rimColor };
-    shader.uniforms.uRimStrength = { value: rimStrength };
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-         uniform vec3 uRimColor;
-         uniform float uRimStrength;`
-      )
-      .replace(
-        '#include <dithering_fragment>',
-        `float zzFresnel = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 3.2);
-         gl_FragColor.rgb += uRimColor * zzFresnel * uRimStrength * 0.42;
-         #include <dithering_fragment>`
-      );
-  };
-  material.needsUpdate = true;
+  try {
+    material.customProgramCacheKey = () => 'zero_zone_pbr_fresnel_v2';
+    material.onBeforeCompile = (shader) => {
+      try {
+        if (
+          !shader.fragmentShader.includes('#include <common>') ||
+          !shader.fragmentShader.includes('#include <dithering_fragment>')
+        ) {
+          return;
+        }
+        shader.uniforms.uRimColor = { value: rimColor };
+        shader.uniforms.uRimStrength = { value: rimStrength };
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            '#include <common>',
+            `#include <common>
+             uniform vec3 uRimColor;
+             uniform float uRimStrength;`
+          )
+          .replace(
+            '#include <dithering_fragment>',
+            `#if !defined(FLAT_SHADED)
+             vec3 zzN = length(vNormal) > 0.0001 ? normalize(vNormal) : vec3(0.0, 1.0, 0.0);
+             vec3 zzV = length(vViewPosition) > 0.0001 ? normalize(vViewPosition) : vec3(0.0, 0.0, 1.0);
+             float zzFresnel = pow(max(0.0001, 1.0 - clamp(dot(zzN, zzV), 0.0, 1.0)), 3.2);
+             gl_FragColor.rgb += uRimColor * zzFresnel * uRimStrength * 0.42;
+             #endif
+             #include <dithering_fragment>`
+          );
+      } catch (err) {
+        console.warn('[Zero-Zone] PBR shader patch fallback:', err);
+      }
+    };
+    material.needsUpdate = true;
+  } catch (err) {
+    console.warn('[Zero-Zone] Custom PBR shader skipped, using standard MeshStandardMaterial:', err);
+  }
   return material;
 }

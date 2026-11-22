@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { applyBattlefieldPBRShader } from './pbr_shaders.js';
+import { UPPER_COMBAT_NETWORK } from './bridge_network.js';
 
 const SPECTRE_CLOAK_VERT = `
   varying vec3 vNormal;
@@ -19,7 +20,9 @@ const SPECTRE_CLOAK_FRAG = `
   varying vec3 vNormal;
   varying vec3 vViewPos;
   void main() {
-    float fresnel = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPos)), 0.0, 1.0), 2.4);
+    vec3 n = length(vNormal) > 0.0001 ? normalize(vNormal) : vec3(0.0, 1.0, 0.0);
+    vec3 v = length(vViewPos) > 0.0001 ? normalize(vViewPos) : vec3(0.0, 0.0, 1.0);
+    float fresnel = pow(max(0.0001, 1.0 - clamp(dot(n, v), 0.0, 1.0)), 2.4);
     vec3 col = uBaseColor + uRimColor * fresnel * (1.1 + uCloak * 1.8);
     gl_FragColor = vec4(col, 1.0 - uCloak * 0.72);
   }
@@ -38,11 +41,11 @@ const SKY_FRAG = `
   varying vec3 vWorldPos;
   void main() {
     float h = normalize(vWorldPos).y;
-    vec3 zenith = vec3(0.04, 0.08, 0.16);
-    vec3 mid = vec3(0.14, 0.21, 0.32);
-    vec3 horizon = vec3(0.42, 0.26, 0.18);
-    vec3 col = mix(horizon, mid, smoothstep(-0.05, 0.22, h));
-    col = mix(col, zenith, smoothstep(0.18, 0.75, h));
+    vec3 zenith = vec3(0.106, 0.157, 0.220);
+    vec3 mid = vec3(0.185, 0.278, 0.388);
+    vec3 horizon = vec3(0.36, 0.31, 0.29);
+    vec3 col = mix(horizon, mid, smoothstep(-0.04, 0.24, h));
+    col = mix(col, zenith, smoothstep(0.20, 0.78, h));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
