@@ -1,0 +1,34 @@
+feature,area,priority,original,clone,notes
+First-person extraction session,core loop,must,yes,no,Public listing says FPP-first extraction sessions; exact flow unknown
+Persistent stash retains extracted inventory,progression,must,yes,no,High-level behavior is listing-documented; persistence implementation is original
+Carried gear lost on death,risk,must,yes,no,Listing-level claim; define transparent Zero-Zone rules
+Shrinking anomaly perimeter,world,must,yes,no,Listing says anomaly gradually shrinks playable area; exact timing/effects unknown
+PvPvE encounters,combat,must,yes,no,Listing-level feature; first slice uses local AI only
+Small-island sector exploration,world,must,yes,no,Listing describes a 2.5 by 2.5 km island; first slice uses a compact original sector
+Pre-raid stash and loadout,preparation,must,yes,no,Customization/inventory supported at high level; exact screens unknown
+Weapon and gear customization,preparation,should,yes,no,Listing-level feature; original item definitions and stats
+Base and research progression,progression,should,yes,no,Listing-level feature; first slice can use local profile storage
+Faction contracts,progression,should,yes,no,Listing-level feature; original factions and contract content
+Healing items and stimulants,survival,should,yes,no,Listing-level feature; original names/effects
+3-player squads,networking,could,yes,no,Listing describes squad size; not in solo vertical slice
+45-player session capacity,networking,could,yes,no,Listing describes capacity; production-scale networking out of first slice
+Up-to-30-minute raid duration,session,could,yes,no,Listing-level maximum; prototype duration may be tuned independently
+Dedicated drop-in cutscene,UX,could,unknown,no,Not specified in accessible reference evidence; original short insertion transition only
+Tactical lobby/stash screen details,UX,should,unknown,no,Exact target screen layout and states are not public
+In-match HUD and telemetry layout,UX,should,unknown,no,Original Zero-Zone presentation; do not copy target UI
+Exact weapon ballistics and recoil values,combat,could,unknown,no,No public target values; use tuneable original parameters
+Specific guard archetypes and tactical squad AI,AI,should,unknown,no,User-proposed archetypes are design choices, not verified target facts
+Loot grid and container interactions,inventory,should,unknown,no,User-proposed interface; exact target grid unknown
+Flare-zone hold-to-extract mechanics,extraction,must,unknown,no,User-proposed Zero-Zone rule; listing only establishes extraction at high level
+Intel Core death drops,loot,should,unknown,no,Original Zero-Zone item concept; not attributed to target
+Multi-storey buildings and detailed POIs,world,could,unknown,no,No validated map/building details; create original geometry
+Destructible props,physics,could,unknown,no,Original scope proposal; validate performance before expansion
+High-resolution PBR texture library,visuals,could,unknown,no,No target assets used; procedural/original materials in prototype
+Volumetric fog and advanced post-processing,visuals,could,unknown,no,Visual treatment is original; implement only within browser performance budget
+Dynamic weather transitions,world,could,unknown,no,Not established by target page; original atmosphere system if feasible
+Spatial 3D audio,audio,could,unknown,no,No target audio copied; browser audio is an original enhancement
+Authoritative extraction/death transactions,networking,must,unknown,no,Required for production multiplayer but not delivered by solo local slice
+Anti-cheat and production operations,networking,could,unknown,no,Live-service production concern; outside prototype scope
+Target narrative,logos, map, characters and assets,legal/scope,skip,yes,no,Do not copy proprietary expression or third-party marks; use original Zero-Zone content
+Target private APIs,source code, binaries and traffic,legal/scope,skip,yes,no,Explicitly excluded under clean-room rules
+Real player community and live population,operations,skip,yes,no,External network and user base cannot be cloned
