@@ -1,336 +1,274 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Zero-Zone — Tactical 3D Arena Shooter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#070a0f" />
+  <meta name="description" content="Zero-Zone — a clean-room tactical extraction shooter prototype." />
+  <title>Zero-Zone // Operations</title>
   <style>
-    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #070a0f; color: #eef2f6; font-family: system-ui, -apple-system, sans-serif; touch-action: none; }
-    #game-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; display: block; }
-
-    /* Minimal Click-to-Aim Pill & Optional [Tab] Class Menu */
-    #click-to-play {
-      position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 35;
-      background: rgba(9, 15, 24, 0.86); border: 1px solid rgba(56, 226, 255, 0.5);
-      border-radius: 999px; padding: 8px 18px; font-size: 0.78rem; font-weight: 700;
-      letter-spacing: 0.6px; color: #e0f7ff; pointer-events: none;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.5); transition: opacity 0.18s ease;
+    :root {
+      color-scheme: dark;
+      --bg: #070a0f;
+      --panel: rgba(11, 17, 22, .88);
+      --panel-strong: rgba(8, 13, 18, .96);
+      --line: rgba(131, 216, 208, .23);
+      --line-hot: rgba(131, 216, 208, .58);
+      --mint: #83d8d0;
+      --amber: #e7b66b;
+      --red: #ef786c;
+      --ink: #e5eeec;
+      --muted: #8b9b9d;
+      --quiet: #546265;
+      --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      --sans: Inter, "Segoe UI", system-ui, sans-serif;
+      --shadow: 0 24px 80px rgba(0,0,0,.45);
     }
-    #quick-menu {
-      position: fixed; inset: 0; z-index: 45; display: none; place-items: center;
-      background: rgba(7, 10, 15, 0.65); backdrop-filter: blur(4px);
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+    button { font: inherit; color: inherit; }
+    button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    #game-canvas { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; outline: none; }
+    #game-canvas:focus-visible { outline: none; }
+    .ambient { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(90deg, rgba(5,9,13,.83), rgba(5,9,13,.30) 55%, rgba(5,9,13,.55)), linear-gradient(0deg, rgba(5,9,13,.8), transparent 42%, rgba(5,9,13,.24)); }
+    .screen { position: fixed; inset: 0; z-index: 5; }
+    .base-screen { overflow: auto; padding: 26px clamp(18px, 4vw, 64px) 40px; }
+    .topbar { height: 56px; display: flex; align-items: center; gap: 30px; border-bottom: 1px solid var(--line); max-width: 1500px; margin: 0 auto; }
+    .brand { display: flex; align-items: center; gap: 12px; letter-spacing: .13em; font: 700 13px var(--mono); white-space: nowrap; }
+    .brand-mark { width: 29px; height: 29px; border: 1px solid var(--mint); display: grid; place-items: center; color: var(--mint); font-size: 11px; transform: rotate(45deg); }
+    .brand-mark span { transform: rotate(-45deg); }
+    .brand b { color: var(--mint); }
+    .nav { display: flex; gap: 22px; color: var(--muted); font: 10px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+    .nav span:first-child { color: var(--ink); }
+    .top-status { margin-left: auto; display: flex; align-items: center; gap: 9px; color: var(--muted); font: 10px var(--mono); letter-spacing: .1em; }
+    .signal { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 12px var(--mint); }
+    .base-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(370px, .88fr); gap: clamp(24px, 5vw, 80px); max-width: 1500px; margin: clamp(30px, 5vh, 68px) auto 0; align-items: start; }
+    .eyebrow { color: var(--mint); font: 10px var(--mono); letter-spacing: .2em; text-transform: uppercase; }
+    .hero h1 { margin: 20px 0 14px; font-size: clamp(46px, 7vw, 98px); line-height: .89; letter-spacing: -.075em; font-weight: 640; max-width: 750px; }
+    .hero h1 span { color: var(--mint); }
+    .intro { color: #b6c3c2; max-width: 560px; line-height: 1.65; font-size: 14px; }
+    .brief-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 32px 0 25px; border: 1px solid var(--line); background: var(--line); max-width: 600px; }
+    .brief-cell { min-height: 74px; padding: 14px; background: rgba(8,13,18,.82); }
+    .brief-cell label { display: block; color: var(--muted); font: 9px var(--mono); letter-spacing: .13em; margin-bottom: 9px; }
+    .brief-cell strong { font: 600 14px var(--mono); color: var(--ink); }
+    .deploy { cursor: pointer; min-height: 56px; min-width: min(100%, 340px); display: inline-flex; align-items: center; justify-content: space-between; gap: 28px; padding: 0 20px; border: 1px solid var(--mint); background: var(--mint); color: #081012; font: 800 11px var(--mono); letter-spacing: .12em; transition: transform .18s, filter .18s; }
+    .deploy:hover { transform: translateY(-2px); filter: brightness(1.09); }
+    .deploy span { font-size: 18px; }
+    .risk-note { margin: 13px 0 0; color: var(--muted); font: 10px var(--mono); letter-spacing: .04em; }
+    .loadout-column { display: grid; gap: 14px; }
+    .panel { border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(16px); }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 15px 17px; border-bottom: 1px solid var(--line); }
+    .panel-head h2, .panel-head h3 { margin: 0; font: 600 11px var(--mono); letter-spacing: .12em; }
+    .panel-head small { color: var(--muted); font: 9px var(--mono); }
+    .loadout-body { padding: 15px 17px 17px; }
+    .weapon-list { display: grid; gap: 8px; }
+    .weapon-choice { cursor: pointer; width: 100%; display: grid; grid-template-columns: 1fr auto; text-align: left; gap: 5px 12px; padding: 11px 12px; background: rgba(6,10,14,.68); border: 1px solid rgba(255,255,255,.09); transition: border-color .16s, background .16s; }
+    .weapon-choice:hover, .weapon-choice.selected { border-color: var(--line-hot); background: rgba(40,78,78,.2); }
+    .weapon-choice span { color: var(--mint); font: 9px var(--mono); letter-spacing: .12em; }
+    .weapon-choice b { grid-column: 1; font: 600 12px var(--mono); }
+    .weapon-choice small { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--muted); font: 9px var(--mono); }
+    .toggle-row { display: flex; gap: 8px; margin-top: 10px; }
+    .chip-btn { cursor: pointer; flex: 1; min-height: 34px; padding: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: 9px var(--mono); letter-spacing: .04em; }
+    .chip-btn[aria-pressed="true"] { color: var(--mint); border-color: var(--line-hot); background: rgba(73,147,143,.12); }
+    .stash-list { max-height: 176px; overflow: auto; }
+    .stash-row, .result-row { display: grid; grid-template-columns: 9px 1fr auto auto; align-items: center; gap: 10px; min-height: 35px; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 11px; }
+    .stash-row:last-child { border-bottom: 0; }
+    .item-mark { display: inline-block; width: 7px; height: 18px; background: var(--item, var(--mint)); box-shadow: 0 0 10px color-mix(in srgb, var(--item, var(--mint)) 50%, transparent); }
+    .stash-row b, .stash-row small { font: 10px var(--mono); color: var(--muted); }
+    .empty-note { padding: 18px 4px; color: var(--muted); font: 10px var(--mono); letter-spacing: .08em; }
+    .contract { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .contract p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .contract .chip-btn { flex: 0 0 auto; max-width: 220px; }
+    .base-footer { max-width: 1500px; margin: 28px auto 0; display: flex; justify-content: space-between; color: var(--quiet); font: 9px var(--mono); letter-spacing: .08em; }
+    #raid-hud { pointer-events: none; z-index: 4; }
+    .hud-top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 18px; right: 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .radar-card { width: 188px; padding: 10px; border: 1px solid var(--line); background: rgba(7,12,16,.78); backdrop-filter: blur(8px); }
+    .radar-title { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--mint); font: 9px var(--mono); letter-spacing: .13em; }
+    #tactical-radar { width: 160px; height: 160px; display: block; border: 1px solid rgba(131,216,208,.16); }
+    .hud-objective { text-align: center; padding: 10px 18px; min-width: min(410px, 40vw); border: 1px solid var(--line); background: rgba(7,12,16,.76); backdrop-filter: blur(8px); }
+    .hud-objective strong { display: block; color: var(--mint); font: 10px var(--mono); letter-spacing: .16em; }
+    .hud-objective span { display: block; margin-top: 6px; color: var(--ink); font: 12px var(--mono); }
+    .raid-clock { text-align: right; min-width: 150px; padding: 10px 13px; border: 1px solid var(--line); background: rgba(7,12,16,.76); font-family: var(--mono); }
+    .raid-clock small { display: block; color: var(--muted); font-size: 9px; letter-spacing: .14em; }
+    #hud-timer { display: block; margin-top: 5px; font-size: 23px; letter-spacing: .05em; }
+    #hud-weather { display: block; margin-top: 7px; color: var(--amber); font-size: 9px; letter-spacing: .09em; }
+    .anomaly-panel { position: absolute; top: 208px; left: 18px; width: 188px; padding: 9px 10px; border-left: 2px solid var(--amber); background: rgba(7,12,16,.76); font: 9px var(--mono); color: var(--muted); }
+    .anomaly-panel strong { color: var(--amber); font-weight: 500; }
+    .meter { height: 3px; background: rgba(255,255,255,.12); margin-top: 7px; overflow: hidden; }
+    .meter > i { display: block; height: 100%; width: 70%; background: var(--mint); transition: width .2s; }
+    #anomaly-bar { background: var(--amber); }
+    .objective-mini { position: absolute; top: 208px; left: 50%; transform: translateX(-50%); padding: 8px 13px; color: var(--ink); background: rgba(7,12,16,.72); border: 1px solid var(--line); font: 9px var(--mono); letter-spacing: .1em; white-space: nowrap; }
+    .extract-meter { width: min(310px, 40vw); height: 4px; margin: 8px auto 0; background: rgba(255,255,255,.12); }
+    #extract-progress { display: block; height: 100%; width: 0; background: var(--mint); transition: width .2s linear; }
+    #extract-progress-label { display: block; margin-top: 6px; color: var(--amber); font-size: 8px; }
+    .vitals { position: absolute; left: 18px; bottom: max(18px, env(safe-area-inset-bottom)); width: 224px; padding: 13px 15px; border: 1px solid var(--line); background: rgba(7,12,16,.82); font-family: var(--mono); }
+    .vital-line { display: flex; justify-content: space-between; margin: 4px 0 6px; color: var(--muted); font-size: 9px; }
+    .vital-line b { color: var(--ink); font-size: 10px; font-weight: 500; }
+    .vital-meter { height: 4px; background: rgba(255,255,255,.1); margin-bottom: 9px; }
+    .vital-meter i { display: block; width: 100%; height: 100%; background: var(--mint); }
+    #armor-bar { background: #89a9c5; }
+    #stamina-bar { background: var(--amber); }
+    .weapon-hud { position: absolute; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); min-width: 250px; padding: 13px 16px; border: 1px solid var(--line); background: rgba(7,12,16,.82); text-align: right; font-family: var(--mono); }
+    #hud-weapon-type { display: block; color: var(--muted); font-size: 8px; letter-spacing: .14em; }
+    #hud-weapon { display: block; margin-top: 5px; color: var(--ink); font-size: 11px; }
+    #hud-ammo { display: block; margin-top: 9px; color: var(--mint); font-size: 24px; letter-spacing: .06em; }
+    .utility-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+    .utility { padding: 5px 7px; border: 1px solid rgba(255,255,255,.1); color: var(--muted); font: 8px var(--mono); }
+    .utility.ready { color: var(--mint); border-color: var(--line-hot); }
+    .crosshair { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; transform: translate(-50%, -50%); }
+    .crosshair::before, .crosshair::after { content: ""; position: absolute; background: rgba(229,238,236,.9); box-shadow: 0 0 6px rgba(0,0,0,.7); }
+    .crosshair::before { width: 1px; height: 12px; left: 7px; top: 2px; }
+    .crosshair::after { height: 1px; width: 12px; top: 7px; left: 2px; }
+    .controls-hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 7px 10px; color: #b7c4c2; background: rgba(7,12,16,.62); font: 8px var(--mono); letter-spacing: .04em; white-space: nowrap; }
+    #interaction-hint { position: absolute; left: 50%; top: calc(50% + 35px); transform: translateX(-50%); padding: 9px 12px; opacity: 0; background: rgba(7,12,16,.88); border: 1px solid var(--line-hot); color: var(--mint); font: 10px var(--mono); letter-spacing: .08em; transition: opacity .16s; }
+    #interaction-hint.visible { opacity: 1; }
+    .anomaly-warning { position: absolute; top: 37%; left: 50%; transform: translate(-50%, -50%); color: var(--amber); font: 700 14px var(--mono); letter-spacing: .18em; opacity: 0; text-shadow: 0 0 24px #d97706; transition: opacity .18s; }
+    .anomaly-warning.visible { opacity: 1; }
+    #anomaly-overlay { position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 35%, rgba(126,53,37,.55)); mix-blend-mode: screen; transition: opacity .3s; }
+    #damage-flash { position: fixed; inset: 0; z-index: 6; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 32%, rgba(175,45,38,.44)); }
+    #damage-flash.active { opacity: 1; }
+    .toast { position: fixed; z-index: 20; top: 27%; left: 50%; transform: translate(-50%, -8px); padding: 10px 14px; border: 1px solid var(--line-hot); background: rgba(7,12,16,.94); color: var(--ink); font: 10px var(--mono); letter-spacing: .1em; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; text-align: center; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .modal-screen { display: grid; place-items: center; padding: 16px; background: rgba(4,8,11,.62); backdrop-filter: blur(10px); pointer-events: auto; }
+    .modal-card { width: min(620px, 100%); max-height: min(78vh, 700px); overflow: auto; border: 1px solid var(--line-hot); background: var(--panel-strong); box-shadow: var(--shadow); }
+    .modal-body { padding: 20px; }
+    .modal-body h2 { margin: 5px 0 7px; font-size: 27px; letter-spacing: -.04em; }
+    .modal-body p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .loot-row { cursor: pointer; display: grid; width: 100%; grid-template-columns: 8px 1fr auto auto auto; align-items: center; gap: 10px; padding: 11px 8px; border: 0; border-bottom: 1px solid rgba(255,255,255,.08); background: transparent; text-align: left; font-size: 11px; }
+    .loot-row:hover { background: rgba(131,216,208,.08); }
+    .loot-row b, .loot-row small { color: var(--muted); font: 9px var(--mono); }
+    .loot-row em { color: var(--mint); font: normal 9px var(--mono); }
+    .close-btn { cursor: pointer; border: 1px solid var(--line); background: transparent; padding: 9px 12px; color: var(--muted); font: 9px var(--mono); }
+    .results-screen { display: grid; place-items: center; padding: 20px; background: rgba(4,8,11,.84); backdrop-filter: blur(12px); }
+    .results-card { width: min(760px, 100%); border: 1px solid var(--line-hot); background: var(--panel-strong); box-shadow: var(--shadow); padding: clamp(22px, 5vw, 44px); }
+    .results-card h1 { margin: 12px 0; font-size: clamp(36px, 7vw, 62px); letter-spacing: -.06em; }
+    #results-copy { max-width: 560px; color: #aab8b7; font-size: 13px; line-height: 1.6; }
+    .results-stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0; }
+    .results-stats span { flex: 1 1 130px; padding: 12px; border: 1px solid var(--line); color: var(--muted); font: 9px var(--mono); }
+    .results-stats b { display: block; margin-bottom: 4px; color: var(--ink); font-size: 16px; }
+    #results-items { margin: 18px 0 24px; }
+    #results-items .result-row { grid-template-columns: 1fr auto; padding: 4px 0; }
+    .error { position: fixed; z-index: 50; left: 18px; right: 18px; bottom: 18px; padding: 14px; border: 1px solid var(--red); background: #1b1010; color: #ffd1ca; font: 12px var(--mono); }
+    @media (max-width: 900px) {
+      .base-grid { grid-template-columns: 1fr; gap: 24px; margin-top: 26px; }
+      .hero h1 { font-size: clamp(48px, 13vw, 76px); }
+      .loadout-column { grid-template-columns: 1fr 1fr; }
+      .contract-panel { grid-column: 1 / -1; }
+      .hud-objective { min-width: 0; }
+      .radar-card { width: 142px; }
+      #tactical-radar { width: 116px; height: 116px; }
+      .anomaly-panel { top: 160px; width: 142px; }
+      .objective-mini { top: 160px; }
     }
-    .qm-card {
-      width: 100%; max-width: 390px; background: #101722; border: 1px solid rgba(56, 226, 255, 0.35);
-      border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px;
-      box-shadow: 0 18px 44px rgba(0,0,0,0.65); text-align: center;
+    @media (max-width: 600px) {
+      .base-screen { padding: 14px 14px 26px; }
+      .topbar { gap: 12px; }
+      .nav { display: none; }
+      .top-status { font-size: 8px; }
+      .base-grid { margin-top: 24px; }
+      .brief-grid { grid-template-columns: repeat(3, 1fr); }
+      .brief-cell { padding: 10px 8px; }
+      .brief-cell strong { font-size: 11px; }
+      .loadout-column { grid-template-columns: 1fr; }
+      .contract-panel { grid-column: auto; }
+      .base-footer { font-size: 8px; }
+      .hud-top { top: 8px; left: 8px; right: 8px; gap: 6px; }
+      .radar-card { width: 104px; padding: 5px; }
+      #tactical-radar { width: 92px; height: 92px; }
+      .radar-title { font-size: 7px; margin-bottom: 4px; }
+      .hud-objective { position: absolute; left: 112px; right: 106px; top: 0; padding: 7px 5px; min-width: 0; }
+      .hud-objective strong { font-size: 7px; }
+      .hud-objective span { font-size: 8px; }
+      .raid-clock { min-width: 92px; padding: 7px 6px; }
+      .raid-clock small { font-size: 7px; }
+      #hud-timer { font-size: 16px; }
+      #hud-weather { font-size: 7px; }
+      .anomaly-panel { top: 114px; left: 8px; width: 104px; font-size: 7px; padding: 6px; }
+      .objective-mini { top: 114px; left: auto; right: 8px; transform: none; max-width: 52vw; overflow: hidden; text-overflow: ellipsis; font-size: 7px; padding: 6px; }
+      .vitals { left: 8px; bottom: 8px; width: 160px; padding: 9px; }
+      .weapon-hud { right: 8px; bottom: 8px; min-width: 160px; padding: 9px; }
+      #hud-ammo { font-size: 18px; }
+      .utility-row { gap: 4px; }
+      .utility { font-size: 7px; padding: 4px; }
+      .controls-hint { bottom: 108px; font-size: 7px; }
+      .crosshair { transform: translate(-50%, -50%) scale(.8); }
     }
-    .qm-card h2 { margin: 0; font-size: 1.05rem; letter-spacing: 1.4px; color: #38e2ff; }
-    .qm-btn {
-      padding: 10px 12px; border-radius: 8px; border: 1px solid #2b3a4f; background: #0a1019;
-      color: #eef2f6; font-weight: 700; font-size: 0.85rem; cursor: pointer; text-align: left;
-    }
-    .qm-btn:hover, .qm-btn.active { border-color: #38e2ff; background: rgba(20, 42, 62, 0.92); color: #fff; }
-    .qm-resume {
-      margin-top: 4px; padding: 10px; border: none; border-radius: 8px; font-weight: 800;
-      cursor: pointer; background: linear-gradient(135deg, #2be0ff, #1789c7); color: #051018;
-    }
-
-    /* Screen Effects */
-    #vignette-lowhp {
-      position: fixed; inset: 0; pointer-events: none; z-index: 12; opacity: 0;
-      background: radial-gradient(circle at center, transparent 52%, rgba(220, 38, 38, 0.55) 100%);
-      transition: opacity 0.18s ease;
-    }
-    #scope-overlay {
-      position: fixed; inset: 0; pointer-events: none; z-index: 14; opacity: 0;
-      background: radial-gradient(circle at center, transparent 28%, rgba(5, 8, 14, 0.9) 66%);
-      transition: opacity 0.12s ease;
-    }
-    .scope-ring {
-      position: absolute; left: 50%; top: 50%; width: 320px; height: 320px;
-      transform: translate(-50%, -50%); border-radius: 50%;
-      border: 2px solid rgba(192, 132, 252, 0.65);
-      box-shadow: 0 0 24px rgba(192, 132, 252, 0.25), inset 0 0 18px rgba(56, 189, 248, 0.18);
-    }
-    .scope-h {
-      position: absolute; left: 50%; top: 50%; width: 300px; height: 1px;
-      transform: translate(-50%, -50%);
-      background: linear-gradient(90deg, transparent, rgba(56, 226, 255, 0.85) 38%, rgba(192, 132, 252, 0.95) 50%, rgba(56, 226, 255, 0.85) 62%, transparent);
-    }
-    .scope-v {
-      position: absolute; left: 50%; top: 50%; width: 1px; height: 300px;
-      transform: translate(-50%, -50%);
-      background: linear-gradient(180deg, transparent, rgba(56, 226, 255, 0.85) 38%, rgba(192, 132, 252, 0.95) 50%, rgba(56, 226, 255, 0.85) 62%, transparent);
-    }
-    .scope-tag {
-      position: absolute; left: 50%; top: calc(50% + 174px); transform: translateX(-50%);
-      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.7rem; font-weight: 700;
-      letter-spacing: 1.2px; color: #d8b4fe; text-shadow: 0 0 8px rgba(192, 132, 252, 0.7);
-    }
-    #damage-indicator {
-      position: fixed; left: 50%; top: 50%; width: 176px; height: 176px;
-      margin-left: -88px; margin-top: -88px; border-radius: 50%;
-      pointer-events: none; z-index: 16; opacity: 0;
-      border: 6px solid transparent; border-top-color: #ef4444;
-      box-shadow: inset 0 12px 18px -12px rgba(239, 68, 68, 0.85);
-      filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.75));
-      will-change: transform, opacity;
-    }
-
-    /* HUD */
-    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: block; }
-    .hud-top {
-      position: absolute; top: 12px; left: 12px; right: 12px;
-      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
-    }
-    .hud-box {
-      background: rgba(10, 15, 22, 0.78); border: 1px solid rgba(56, 226, 255, 0.28);
-      border-radius: 10px; padding: 8px 12px; min-width: 160px; backdrop-filter: blur(4px);
-    }
-    .bar-bg { width: 100%; height: 7px; background: #1b2533; border-radius: 99px; overflow: hidden; margin-top: 4px; margin-bottom: 5px; }
-    .bar-fill { height: 100%; transition: width 0.1s linear; }
-    .hp-fill { background: linear-gradient(90deg, #10b981, #34d399); }
-    .shd-fill { background: linear-gradient(90deg, #0284c7, #38bdf8); }
-    .stam-fill { background: #94a3b8; }
-    .cd-fill { background: #a855f7; }
-    .vault-fill { background: #f59e0b; }
-
-    /* Dynamic Crosshair & Hitmarker */
-    #crosshair {
-      position: absolute; left: 50%; top: 50%; width: 24px; height: 24px;
-      transform: translate(-50%, -50%); transition: width 0.08s ease, height 0.08s ease, opacity 0.1s ease;
-    }
-    .ch-line { position: absolute; background: rgba(235, 248, 255, 0.9); box-shadow: 0 0 4px rgba(0,0,0,0.8); }
-    .ch-top { width: 2px; height: 7px; left: 50%; top: -8px; transform: translateX(-50%); }
-    .ch-bot { width: 2px; height: 7px; left: 50%; bottom: -8px; transform: translateX(-50%); }
-    .ch-left { height: 2px; width: 7px; top: 50%; left: -8px; transform: translateY(-50%); }
-    .ch-right { height: 2px; width: 7px; top: 50%; right: -8px; transform: translateY(-50%); }
-    .ch-dot { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: #38e2ff; transform: translate(-50%, -50%); }
-
-    #hitmarker {
-      position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
-      transform: translate(-50%, -50%); opacity: 0; transition: opacity 0.08s ease;
-    }
-    #hitmarker::before, #hitmarker::after {
-      content: ""; position: absolute; left: 50%; top: 50%; width: 20px; height: 2px;
-      background: currentColor; border-radius: 2px;
-    }
-    #hitmarker::before { transform: translate(-50%, -50%) rotate(45deg); }
-    #hitmarker::after { transform: translate(-50%, -50%) rotate(-45deg); }
-    #hit-callout {
-      position: absolute; left: 50%; top: calc(50% + 22px); transform: translateX(-50%);
-      font-size: 0.72rem; font-weight: 800; letter-spacing: 1px; color: #f87171;
-      text-shadow: 0 0 8px rgba(248, 113, 113, 0.8); opacity: 0; transition: opacity 0.15s ease;
-    }
-
-    /* Kill Feed */
-    #kill-feed {
-      position: absolute; top: 82px; right: 12px; display: flex; flex-direction: column;
-      align-items: flex-end; gap: 5px; max-width: 340px;
-    }
-    .kf-entry {
-      background: rgba(9, 13, 20, 0.82); border-right: 3px solid #38bdf8;
-      border-radius: 6px; padding: 5px 10px; font-size: 0.75rem; color: #e2e8f0;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.45);
-    }
-    .kf-entry.hs { border-right-color: #ef4444; }
-    .kf-hs-tag { color: #f87171; font-weight: 800; margin-left: 4px; }
-
-    /* Weapon Inspection Telemetry Panel ([I]) */
-    #weapon-inspect-panel {
-      position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%);
-      background: rgba(9, 15, 24, 0.88); border: 1px solid rgba(56, 226, 255, 0.45);
-      border-radius: 10px; padding: 10px 16px; min-width: 310px; text-align: center;
-      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.74rem; color: #cbd5e1;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.55); opacity: 0; transition: opacity 0.16s ease;
-    }
-    #weapon-inspect-panel .wi-title { color: #38e2ff; font-weight: 800; font-size: 0.84rem; margin-bottom: 4px; letter-spacing: 0.8px; }
-
-    /* Bottom Vitals & Weapons */
-    .hud-bottom-left { position: absolute; bottom: 16px; left: 16px; display: flex; flex-direction: column; width: 240px; }
-    .hud-bottom-right {
-      position: absolute; bottom: 16px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-    }
-    .ammo-box { text-align: right; min-width: 190px; }
-    .ammo-big { font-size: 1.45rem; font-weight: 800; letter-spacing: 0.5px; color: #f8fafc; line-height: 1.1; }
-    .ammo-sub { font-size: 0.75rem; color: #94a3b8; }
-    .hud-weapons { display: flex; gap: 7px; }
-    .wpn-slot {
-      background: rgba(11, 16, 24, 0.78); border: 1px solid rgba(159, 176, 196, 0.25);
-      border-radius: 8px; padding: 6px 10px; font-size: 0.73rem; color: #9fb0c4;
-      transition: all 0.12s ease;
-    }
-    .wpn-slot.active {
-      border-color: #38e2ff; color: #eef2f6; background: rgba(20, 42, 62, 0.92);
-      box-shadow: 0 0 12px rgba(56, 226, 255, 0.28); font-weight: 700;
-    }
-    .ks-slot {
-      background: rgba(11, 16, 24, 0.82); border: 1px solid rgba(245, 158, 11, 0.35);
-      border-radius: 8px; padding: 6px 10px; font-size: 0.72rem; color: #cbd5e1;
-      transition: all 0.14s ease;
-    }
-    .ks-slot.ready {
-      border-color: #fbbf24; color: #fef3c7; background: rgba(56, 38, 12, 0.88);
-      box-shadow: 0 0 12px rgba(245, 158, 11, 0.32); font-weight: 700;
-    }
-    .ks-slot.active-uav {
-      border-color: #38e2ff; color: #e0f7ff; background: rgba(12, 48, 66, 0.92);
-      box-shadow: 0 0 14px rgba(56, 226, 255, 0.45); font-weight: 700;
-    }
-    #tactical-radar {
-      position: absolute; top: 82px; left: 12px; padding: 6px;
-      background: rgba(9, 14, 21, 0.82); border: 1px solid rgba(56, 226, 255, 0.35);
-      border-radius: 10px; backdrop-filter: blur(4px); box-shadow: 0 8px 24px rgba(0,0,0,0.45);
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-    }
-    #minimap-canvas {
-      width: 142px; height: 142px; border-radius: 7px; display: block;
-      background: #141a21; border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-    #minimap-status {
-      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.65rem;
-      font-weight: 700; letter-spacing: 0.7px; color: #7dd3fc;
-    }
-    #hud-weather {
-      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.62rem;
-      font-weight: 700; letter-spacing: 0.5px; color: #fde68a;
-    }
-    #tactical-toast {
-      position: absolute; top: 68px; left: 50%; transform: translateX(-50%);
-      background: rgba(12, 24, 38, 0.9); border: 1px solid rgba(251, 191, 36, 0.6);
-      color: #fef3c7; border-radius: 999px; padding: 6px 16px; font-size: 0.76rem;
-      font-weight: 800; letter-spacing: 0.8px; opacity: 0; transition: opacity 0.2s ease;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
-    }
-    .hint { font-size: 0.72rem; color: #9fb0c4; }
-
-    /* Mobile Touch Controls */
-    #touch-controls { position: fixed; inset: 0; z-index: 30; pointer-events: none; display: none; }
-    .joy-zone {
-      position: absolute; bottom: 24px; width: 120px; height: 120px; border-radius: 50%;
-      background: rgba(255,255,255,0.08); border: 2px solid rgba(56,226,255,0.35); pointer-events: auto;
-    }
-    #joy-move { left: 20px; }
-    #joy-look { right: 20px; bottom: 170px; width: 100px; height: 100px; }
-    .joy-knob {
-      position: absolute; left: 50%; top: 50%; width: 44px; height: 44px;
-      transform: translate(-50%, -50%); border-radius: 50%; background: rgba(56,226,255,0.65);
-    }
-    .touch-actions {
-      position: absolute; right: 16px; bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; pointer-events: auto;
-    }
-    .t-btn {
-      width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35);
-      background: rgba(15, 23, 34, 0.8); color: #fff; font-weight: 800; font-size: 0.65rem;
-    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
   </style>
 </head>
 <body>
-  <canvas id="game-canvas"></canvas>
-  <div id="vignette-lowhp"></div>
-  <div id="scope-overlay">
-    <div class="scope-ring"></div>
-    <div class="scope-h"></div>
-    <div class="scope-v"></div>
-    <div class="scope-tag">XR-9 DIGITAL RAIL OPTIC // 2.2x HEAD CRIT</div>
-  </div>
-  <div id="damage-indicator"></div>
+  <canvas id="game-canvas" tabindex="0" aria-label="Zero-Zone tactical extraction simulation"></canvas>
+  <div class="ambient" aria-hidden="true"></div>
+  <div id="anomaly-overlay" aria-hidden="true"></div>
+  <div id="damage-flash" aria-hidden="true"></div>
 
-  <div id="click-to-play">CLICK ARENA TO AIM &amp; PLAY &bull; [F1-F3] Switch Class &bull; [TAB] Loadout</div>
+  <main id="base-screen" class="screen base-screen">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark"><span>ZZ</span></div><b>ZERO-ZONE</b><span>// OPERATIONS</span></div>
+      <nav class="nav" aria-label="Operations navigation"><span>Operations</span><span>Stash</span><span>Research</span></nav>
+      <div class="top-status"><i class="signal"></i><span id="base-status">INITIALIZING</span></div>
+    </header>
+    <div class="base-grid">
+      <section class="hero">
+        <p class="eyebrow">NORTH QUAY // CONTRACTOR NETWORK</p>
+        <h1>THE LOOP<br><span>IS OPEN.</span></h1>
+        <p class="intro">Enter the quarantine sector, recover what the perimeter left behind, and make it back before the signal dies. Nothing carried out is yours until extraction clears.</p>
+        <div class="brief-grid" aria-label="Deployment brief">
+          <div class="brief-cell"><label>ACTIVE SECTOR</label><strong>04 / RELAY</strong></div>
+          <div class="brief-cell"><label>FIELD WINDOW</label><strong>06:00</strong></div>
+          <div class="brief-cell"><label>ANOMALY</label><strong>RISING</strong></div>
+        </div>
+        <button id="deploy-btn" class="deploy"><span>DEPLOY TO SECTOR 04</span><span aria-hidden="true">↗</span></button>
+        <p class="risk-note">KIT AND CARRIED LOOT ARE AT RISK // EXTRACT TO BANK ITEMS</p>
+      </section>
 
-  <div id="quick-menu">
-    <div class="qm-card">
-      <h2>ZERO-ZONE // OPERATOR CLASS</h2>
-      <button class="qm-btn active" id="qm-vanguard" data-kit="vanguard" type="button">[F1] Vanguard — Recon (100 HP / 50 Shd | Tactical Dash)</button>
-      <button class="qm-btn" id="qm-spectre" data-kit="spectre" type="button">[F2] Spectre — Stealth (90 HP / 40 Shd | Optical Cloak)</button>
-      <button class="qm-btn" id="qm-juggernaut" data-kit="juggernaut" type="button">[F3] Juggernaut — EOD (150 HP / 100 Shd | Kinetic Barrier)</button>
-      <button class="qm-resume" id="qm-resume" type="button">Resume Arena</button>
+      <section class="loadout-column" aria-label="Contractor preparation">
+        <div class="panel">
+          <div class="panel-head"><h2>01 // CARRIED WEAPON</h2><small id="selected-weapon">AR-9 CARBINE</small></div>
+          <div class="loadout-body"><div id="loadout-weapon" class="weapon-list"></div>
+            <div class="toggle-row"><button id="optic-toggle" class="chip-btn" aria-pressed="false">INSTALL PRISM OPTIC</button><button id="suppressor-toggle" class="chip-btn" aria-pressed="false">INSTALL SOUND SHROUD</button></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>02 // SECURED STASH</h2><small><span id="profile-xp">0 XP</span> · <span id="profile-raids">0 RUNS</span></small></div>
+          <div class="loadout-body stash-list" id="stash-list" aria-live="polite"></div>
+        </div>
+        <div class="panel contract-panel">
+          <div class="panel-head"><h2>03 // FIELD CONTRACT</h2><small>OPTIONAL // LOCAL PROTOTYPE</small></div>
+          <div class="loadout-body contract"><div><b>SECURE THREE INTEL CORES</b><p>Recover data from hostile caches and return alive.</p></div><button id="contract-toggle" class="chip-btn" aria-pressed="true">CONTRACT ACTIVE</button></div>
+        </div>
+      </section>
     </div>
-  </div>
+    <footer class="base-footer"><span>ZERO-ZONE // CLEAN-ROOM PROTOTYPE</span><span id="physics-status">PHYSICS STARTING</span><button id="reset-profile" class="close-btn">RESET LOCAL PROFILE</button></footer>
+  </main>
 
-  <div id="arena-error" style="display:none;position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:50;background:rgba(127,29,29,0.92);color:#fecaca;border:1px solid #ef4444;border-radius:8px;padding:8px 14px;font-size:0.8rem;max-width:480px;text-align:center;"></div>
-
-  <div id="hud">
+  <section id="raid-hud" class="screen" hidden aria-label="Raid interface">
     <div class="hud-top">
-      <div class="hud-box">
-        <div style="font-size:0.9rem;font-weight:800;" id="hud-timer">05:00</div>
-        <div class="hint" id="hud-room">Solo AI Arena</div>
-      </div>
-      <div class="hud-box" style="min-width:220px;">
-        <div style="font-size:0.8rem;font-weight:700;" id="hud-vault-text">Vault Breach: 0 / 20s</div>
-        <div class="bar-bg"><div class="bar-fill vault-fill" id="hud-vault-bar" style="width:0%"></div></div>
-      </div>
+      <div class="radar-card"><div class="radar-title"><span>TACTICAL RADAR</span><span>N ↑</span></div><canvas id="tactical-radar" width="160" height="160" aria-label="Nearby threats and extraction radar"></canvas></div>
+      <div class="hud-objective"><strong id="mission-label">RAID // SECTOR 04</strong><span id="objective-status">RECOVER INTEL // REACH ACTIVE SITE</span></div>
+      <div class="raid-clock"><small>FIELD WINDOW</small><strong id="hud-timer">06:00</strong><span id="hud-weather">NIGHT // RADIO STATIC</span></div>
     </div>
+    <div class="anomaly-panel"><strong>ANOMALY PERIMETER</strong><span id="anomaly-readout">96m SAFE RADIUS</span><div class="meter"><i id="anomaly-bar"></i></div></div>
+    <div class="objective-mini"><span id="extraction-readout">ACTIVE EXTRACTION // UNKNOWN</span><div class="extract-meter"><i id="extract-progress"></i></div><span id="extract-progress-label">SIGNAL INACTIVE</span></div>
+    <div id="anomaly-alert" class="anomaly-warning">PERIMETER BREACH</div>
+    <div id="interaction-hint" role="status" aria-live="polite"></div>
+    <div class="crosshair" aria-hidden="true"></div>
+    <div class="controls-hint">WASD MOVE · SHIFT SPRINT · C CROUCH · SPACE VAULT · LMB FIRE · RMB AIM · R RELOAD · E LOOT · F FLARE · 4 SCAN · 5 SUPPORT · 6 WEATHER</div>
+    <div class="vitals"><div class="vital-line"><span>VITALS</span><b id="hud-hp">100%</b></div><div class="vital-meter"><i id="hp-bar"></i></div><div class="vital-line"><span>ARMOR</span><b id="hud-armor">60%</b></div><div class="vital-meter"><i id="armor-bar"></i></div><div class="vital-line"><span>STAMINA</span><b>SPRINT RESERVE</b></div><div class="vital-meter"><i id="stamina-bar"></i></div><div class="vital-line"><span>CONTRACT</span><b id="contract-status">GUARDS 0/3</b></div></div>
+    <div class="weapon-hud"><span id="hud-weapon-type">ASSAULT RIFLE</span><b id="hud-weapon">AR-9 CARBINE</b><strong id="hud-ammo">30 / 120</strong><div class="utility-row"><span id="ks-uav" class="utility ready">[4] UAV READY</span><span id="ks-arty" class="utility ready">[5] Arty READY</span></div></div>
+  </section>
 
-    <div id="tactical-radar">
-      <canvas id="minimap-canvas" width="142" height="142"></canvas>
-      <div id="minimap-status">SINAI RADAR // SUEZ SECTOR</div>
-      <div id="hud-weather">SUEZ SIM // 17:30 • 24°C CLEAR</div>
-    </div>
-    <div id="tactical-toast"></div>
-    <div id="kill-feed"></div>
+  <section id="loot-panel" class="screen modal-screen" hidden aria-labelledby="loot-title">
+    <div class="modal-card"><div class="panel-head"><h2>FIELD RECOVERY</h2><button id="loot-close" class="close-btn">CLOSE · ESC</button></div><div class="modal-body"><p class="eyebrow">CARRIED ITEMS ARE NOT SECURED UNTIL EXTRACTION</p><h2 id="loot-title">CONTAINER</h2><div id="loot-items" aria-live="polite"></div></div></div>
+  </section>
 
-    <div id="crosshair">
-      <div class="ch-line ch-top"></div>
-      <div class="ch-line ch-bot"></div>
-      <div class="ch-line ch-left"></div>
-      <div class="ch-line ch-right"></div>
-      <div class="ch-dot"></div>
-    </div>
-    <div id="hitmarker"></div>
-    <div id="hit-callout">HEADSHOT 2.2x</div>
-    <div id="weapon-inspect-panel"></div>
+  <section id="results-screen" class="screen results-screen" hidden aria-labelledby="results-title">
+    <div class="results-card"><p id="results-kicker" class="eyebrow">RUN COMPLETE</p><h1 id="results-title">LOOT SECURED</h1><p id="results-copy"></p><div id="results-stats" class="results-stats"></div><div id="results-items"></div><button id="return-base" class="deploy"><span>RETURN TO OPERATIONS</span><span aria-hidden="true">↗</span></button></div>
+  </section>
 
-    <div class="hud-bottom-left hud-box">
-      <div style="display:flex;justify-content:space-between;font-size:0.76rem;font-weight:700;">
-        <span id="hud-hp-text">HP: 100 / 100</span>
-        <span id="hud-stance" style="color:#38bdf8;">STAND</span>
-      </div>
-      <div class="bar-bg"><div class="bar-fill hp-fill" id="hud-hp-bar" style="width:100%"></div></div>
-      <div style="font-size:0.75rem;" id="hud-shd-text">Shield: 50 / 50</div>
-      <div class="bar-bg"><div class="bar-fill shd-fill" id="hud-shd-bar" style="width:100%"></div></div>
-      <div style="font-size:0.74rem;" id="hud-stam-text">Stamina: 100</div>
-      <div class="bar-bg"><div class="bar-fill stam-fill" id="hud-stam-bar" style="width:100%"></div></div>
-      <div style="font-size:0.74rem;" id="hud-cd-text">Ability [G]: Ready</div>
-      <div class="bar-bg"><div class="bar-fill cd-fill" id="hud-cd-bar" style="width:100%"></div></div>
-      <div class="hint">[Q/E] Lean &bull; [C] Crouch &bull; [I] Inspect &bull; [4] UAV &bull; [5] Arty &bull; [6] Sky</div>
-    </div>
-
-    <div class="hud-bottom-right">
-      <div class="hud-box ammo-box">
-        <div class="ammo-big" id="hud-ammo-text">30 / 150</div>
-        <div class="ammo-sub" id="hud-wpn-name">VX-47 Assault Rifle</div>
-        <div class="bar-bg" style="margin-bottom:0;"><div class="bar-fill shd-fill" id="hud-reload-bar" style="width:100%"></div></div>
-      </div>
-      <div class="hud-weapons">
-        <div class="ks-slot ready" id="ks-uav">[4] UAV Ready</div>
-        <div class="ks-slot ready" id="ks-arty">[5] Arty Ready</div>
-      </div>
-      <div class="hud-weapons">
-        <div class="wpn-slot active" id="wpn-0">[1] VX-47 Rifle</div>
-        <div class="wpn-slot" id="wpn-1">[2] XR-9 Railgun</div>
-        <div class="wpn-slot" id="wpn-2">[3] M-12 Shotgun</div>
-      </div>
-    </div>
-  </div>
-
-  <div id="touch-controls">
-    <div class="joy-zone" id="joy-move"><div class="joy-knob" id="knob-move"></div></div>
-    <div class="joy-zone" id="joy-look"><div class="joy-knob" id="knob-look"></div></div>
-    <div class="touch-actions">
-      <button class="t-btn" id="t-fire" type="button">FIRE</button>
-      <button class="t-btn" id="t-ads" type="button">ADS</button>
-      <button class="t-btn" id="t-jump" type="button">JUMP</button>
-      <button class="t-btn" id="t-crouch" type="button">CRCH</button>
-      <button class="t-btn" id="t-reload" type="button">RLD</button>
-      <button class="t-btn" id="t-weapon" type="button">WPN</button>
-      <button class="t-btn" id="t-ability" type="button">ABL</button>
-      <button class="t-btn" id="t-breach" type="button">VLT</button>
-    </div>
-  </div>
-
-  <script type="module" src="/src/main.js"></script>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="arena-error" class="error" role="alert" hidden></div>
+  <script type="module" src="/src/extraction.js"></script>
 </body>
 </html>
