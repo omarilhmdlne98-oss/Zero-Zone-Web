@@ -26,7 +26,9 @@ const server = http.createServer(function(req, res) {
 await new Promise(function(resolve) { server.listen(0, '127.0.0.1', resolve); });
 const url = 'http://127.0.0.1:' + server.address().port + '/';
 const chromeArgs = ['--headless=new', '--no-sandbox', '--disable-gpu-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--window-size=1280,720', '--remote-debugging-port=0', url];
-const chrome = spawn('/usr/bin/chromium', chromeArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+const chromeBin = process.env.CHROME_BIN || ['/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/chromium-browser'].find((p) => fs.existsSync(p));
+if (!chromeBin) throw new Error('No Chromium/Chrome binary found. Set CHROME_BIN.');
+const chrome = spawn(chromeBin, chromeArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 let wsUrl = '';
 let stderr = '';
 let pageWs = null;

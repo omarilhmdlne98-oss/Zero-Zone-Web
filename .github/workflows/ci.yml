@@ -1,0 +1,37 @@
+name: Zero-Zone CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install client dependencies
+        run: npm --prefix client ci
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Syntax check server and client scripts
+        run: |
+          npm --prefix server run check
+          node --check client/src/extraction.js
+          node --check tests/playwright_smoke.mjs
+
+      - name: Build production client bundle
+        run: npm --prefix client run build
+
+      - name: Run Playwright/Chromium WebGL smoke test
+        run: node tests/playwright_smoke.mjs
